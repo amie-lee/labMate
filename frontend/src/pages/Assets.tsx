@@ -1,0 +1,125 @@
+import { useEffect, useState } from "react";
+import { api, apiError } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { useConfig } from "../api/config";
+import { DataTable, type Col } from "../ui/DataTable";
+
+import { confirmDialog } from "../ui/dialog";
+
+interface Asset {
+  id: string; asset_class: string; asset_no: string; name: string; spec: string; model: string;
+  owner_id: string; project_id: string; building: string; floor: string; room: string;
+  location: string; buy_date: string | null; note: string;
+}
+const CLS_FB = ["연구실", "단국대", "산학협력단", "공통"];
+const EMPTY = { asset_class: "연구실", asset_no: "", name: "", spec: "", model: "", owner_id: "", project_id: "", building: "", floor: "", room: "", location: "", buy_date: "", note: "" };
+
+export default function Assets() {
+  const { me } = useAuth();
+  const CLS = useConfig<string[]>("asset_types", CLS_FB);
+  const canManage = !!me && (["prof", "staff", "admin"].includes(me.role) || !!me.delegated_admin);
+  const [items, setItems] = useState<Asset[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [grants, setGrants] = useState<any[]>([]);
+  const [err, setErr] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState("");
+  const [form, setForm] = useState({ ...EMPTY });
+  const up = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const pcode = (id: string) => grants.find((p) => p.id === id)?.code || "";
+
+  async function load() {
+    try {
+      setItems((await api.get<Asset[]>("/resource/assets")).data);
+      setUsers((await api.get<any[]>("/members/users")).data);
+      setGrants((await api.get<any[]>("/projects/projects?kind=grant")).data);
+    } catch (e) { setErr(apiError(e)); }
+  }
+  useEffect(() => { load(); }, []);
+
+  function openNew() { setEditId(""); setForm({ ...EMPTY }); setAdding(true); }
+  function editAsset(a: Asset) {
+    setForm({ asset_class: a.asset_class, asset_no: a.asset_no, name: a.name, spec: a.spec, model: a.model, owner_id: a.owner_id || "", project_id: a.project_id || "", building: a.building || "", floor: a.floor || "", room: a.room || "", location: a.location || "", buy_date: a.buy_date || "", note: a.note || "" });
+    setEditId(a.id); setAdding(true); window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function closeForm() { setAdding(false); setEditId(""); setForm({ ...EMPTY }); }
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setErr("");
+    if (!form.name.trim()) { setErr("자산명을 입력하세요"); return; }
+    const payload = { ...form, buy_date: form.buy_date || null };
+    try {
+      if (editId) await api.patch(`/resource/assets/${editId}`, payload);
+      else await api.post("/resource/assets", payload);
+      closeForm(); load();
+    } catch (e) { setErr(apiError(e)); }
+  }
+  async function del(a: Asset) {
+    if (!await confirmDialog(`자산 "${a.name}"을(를) 삭제할까요?`, { danger: true })) return;
+    try { await api.delete(`/resource/assets/${a.id}`); load(); } catch (e) { setErr(apiError(e)); }
+  }
+
+  const ownerName = (a: Asset) => users.find((u) => u.id === a.owner_id)?.name || a.owner_id || "—";
+  const projCode = (a: Asset) => (a.project_id ? pcode(a.project_id) : "");
+  const cols: Col<Asset>[] = [
+    { key: "asset_class", label: "분류", value: (a) => a.asset_class, render: (a) => <span className="badge s-info">{a.asset_class}</span> },
+    { key: "asset_no", label: "자산번호", value: (a) => a.asset_no, render: (a) => <span className="small">{a.asset_no || "—"}</span> },
+    { key: "name", label: "자산명", value: (a) => a.name, render: (a) => <b>{a.name}</b> },
+    { key: "spec", label: "규격", render: (a) => <span className="small muted">{a.spec || "—"}</span> },
+    { key: "model", label: "모델", render: (a) => <span className="small muted">{a.model || "—"}</span> },
+    { key: "building", label: "건물", render: (a) => <span className="small">{a.building || "—"}</span> },
+    { key: "floor", label: "층", render: (a) => <span className="small">{a.floor || "—"}</span> },
+    { key: "room", label: "호실", render: (a) => <span className="small">{a.room || "—"}</span> },
+    { key: "owner", label: "책임자", render: (a) => <span className="small">{ownerName(a)}</span> },
+    { key: "location", label: "위치", render: (a) => <span className="small">{a.location || "—"}</span> },
+    { key: "project", label: "과제", render: (a) => <span className="small muted">{projCode(a) || "—"}</span> },
+    { key: "buy_date", label: "구매일자", value: (a) => a.buy_date || "", render: (a) => <span className="small muted">{a.buy_date || "—"}</span> },
+    { key: "note", label: "비고", render: (a) => <span className="small muted">{a.note || "—"}</span> },
+    ...(canManage ? [{ key: "act", label: "작업", nowrap: true, render: (a: Asset) => (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <button className="btn ghost sm" data-testid={`as-edit-${a.id}`} onClick={() => editAsset(a)}>수정</button>{" "}
+        <button className="btn ghost sm" data-testid={`as-del-${a.id}`} style={{ color: "var(--bad)" }} onClick={() => del(a)}>삭제</button>
+      </span>
+    ) } as Col<Asset>] : []),
+  ];
+
+  return (
+    <div data-testid="page-assets">
+      <div className="page-head">
+        <div><div className="crumb">연구실 › 자산</div><h1>연구실 자산</h1></div>
+        {canManage && <button className="btn primary" data-testid="asset-add-open" onClick={() => (adding ? closeForm() : openNew())}>+ 자산 등록</button>}
+      </div>
+      {err && <div className="form-err" data-testid="asset-error">{err}</div>}
+
+      {adding && (
+        <form className="card" onSubmit={save} data-testid="asset-form" style={{ marginBottom: 12 }}>
+          <div className="card-h"><b>{editId ? "자산 수정" : "자산 등록"}</b></div>
+          <div className="bd grid2">
+            <div><label>자산분류</label><select data-testid="as-asset_class" value={form.asset_class} onChange={(e) => up("asset_class", e.target.value)}>{CLS.map((c) => <option key={c}>{c}</option>)}</select></div>
+            <div><label>자산번호</label><input data-testid="as-asset_no" value={form.asset_no} onChange={(e) => up("asset_no", e.target.value)} placeholder="예: 2023-0002" /></div>
+            <div><label>자산명 *</label><input data-testid="as-name" value={form.name} onChange={(e) => up("name", e.target.value)} /></div>
+            <div><label>구매일자</label><input data-testid="as-buy" type="date" value={form.buy_date} onChange={(e) => up("buy_date", e.target.value)} /></div>
+            <div><label>규격</label><input data-testid="as-spec" value={form.spec} onChange={(e) => up("spec", e.target.value)} placeholder="예: 1400*700*700" /></div>
+            <div><label>모델</label><input data-testid="as-model" value={form.model} onChange={(e) => up("model", e.target.value)} /></div>
+            <div><label>건물</label><input data-testid="as-building" value={form.building} onChange={(e) => up("building", e.target.value)} placeholder="예: 소프트웨어 ICT관" /></div>
+            <div><label>층</label><input data-testid="as-floor" value={form.floor} onChange={(e) => up("floor", e.target.value)} placeholder="예: B1" /></div>
+            <div><label>호실</label><input data-testid="as-room" value={form.room} onChange={(e) => up("room", e.target.value)} placeholder="예: B104" /></div>
+            <div><label>위치</label><input data-testid="as-loc" value={form.location} onChange={(e) => up("location", e.target.value)} placeholder="예: 학생연구실 / R2-VPN" /></div>
+            <div><label>책임자</label><input data-testid="as-owner" value={form.owner_id} onChange={(e) => up("owner_id", e.target.value)} placeholder="책임자 이름" /></div>
+            <div><label>과제</label><select data-testid="as-proj" value={form.project_id} onChange={(e) => up("project_id", e.target.value)}><option value="">(없음)</option>{grants.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</select></div>
+            <div style={{ gridColumn: "1 / -1" }}><label>비고</label><input data-testid="as-note" value={form.note} onChange={(e) => up("note", e.target.value)} /></div>
+          </div>
+          <div className="bd" style={{ display: "flex", gap: 8 }}>
+            <button className="btn primary" data-testid="asset-add-submit">{editId ? "저장" : "등록"}</button>
+            <button type="button" className="btn ghost" onClick={closeForm}>취소</button>
+          </div>
+        </form>
+      )}
+
+      <DataTable<Asset> rows={items} cols={cols} testid="asset-table" pageSize={12} defaultSort="name"
+        searchPlaceholder="자산명·번호·규격·모델·위치·책임자 검색…"
+        searchKeys={(a) => [a.name, a.asset_no, a.spec, a.model, a.building, a.floor, a.room, a.location, a.note, ownerName(a), projCode(a)].join(" ")}
+        chips={{ get: (a) => a.asset_class, values: CLS }}
+        empty="자산 없음" />
+    </div>
+  );
+}

@@ -1,0 +1,22 @@
+# 영속 데이터(hostpath) — 절대 커밋하지 않음
+/data/postgres/
+/data/redis/
+/data/uploads/*
+!/data/uploads/.gitkeep
+
+# env
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# node / frontend build
+node_modules/
+frontend/dist/
+
+
+# DB 백업/덤프
+/data/*.sql
+/data/*.dump

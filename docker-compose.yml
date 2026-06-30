@@ -1,0 +1,166 @@
+name: labmate
+
+# 모든 영속 데이터는 ./data (hostpath) 아래에 둔다. 백업 = data 디렉토리 복사.
+x-common-env: &common-env
+  JWT_SECRET: ${JWT_SECRET:?set in .env}
+  JWT_ALGORITHM: HS256
+  ACCESS_TOKEN_MINUTES: "15"
+  REFRESH_TOKEN_DAYS: "14"
+  REDIS_URL: redis://redis:6379/0
+  ENV: ${ENV:-development}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-labmate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      # 서비스별 DB는 init 스크립트가 생성
+      LABMATE_DATABASES: labmate_members,labmate_projects,labmate_funds,labmate_attendance,labmate_boards,labmate_resource
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-labmate}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+
+  members-service:
+    image: ${ORG:-boanlab}/labmate-members:${VERSION:-latest}
+    build:
+      context: ./backend
+      dockerfile: services/members/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SERVICE_NAME: members
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labmate}:${POSTGRES_PASSWORD}@postgres:5432/labmate_members
+      UPLOAD_DIR: /data/uploads/members
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-labmate@kloud.zone}        # 첫 배포 자동 관리자 시드
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-labmate123}
+    volumes:
+      - ./data/uploads/members:/data/uploads/members
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  projects-service:
+    image: ${ORG:-boanlab}/labmate-projects:${VERSION:-latest}
+    build:
+      context: ./backend
+      dockerfile: services/projects/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SERVICE_NAME: projects
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labmate}:${POSTGRES_PASSWORD}@postgres:5432/labmate_projects
+      UPLOAD_DIR: /data/uploads/projects
+    volumes:
+      - ./data/uploads/projects:/data/uploads/projects
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  funds-service:
+    image: ${ORG:-boanlab}/labmate-funds:${VERSION:-latest}
+    build:
+      context: ./backend
+      dockerfile: services/funds/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SERVICE_NAME: funds
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labmate}:${POSTGRES_PASSWORD}@postgres:5432/labmate_funds
+      UPLOAD_DIR: /data/uploads/funds
+    volumes:
+      - ./data/uploads/funds:/data/uploads/funds
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  attendance-service:
+    image: ${ORG:-boanlab}/labmate-attendance:${VERSION:-latest}
+    build:
+      context: ./backend
+      dockerfile: services/attendance/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SERVICE_NAME: attendance
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labmate}:${POSTGRES_PASSWORD}@postgres:5432/labmate_attendance
+      UPLOAD_DIR: /data/uploads/attendance
+    volumes:
+      - ./data/uploads/attendance:/data/uploads/attendance
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  boards-service:
+    image: ${ORG:-boanlab}/labmate-boards:${VERSION:-latest}
+    build:
+      context: ./backend
+      dockerfile: services/boards/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SERVICE_NAME: boards
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labmate}:${POSTGRES_PASSWORD}@postgres:5432/labmate_boards
+      UPLOAD_DIR: /data/uploads/boards
+    volumes:
+      - ./data/uploads/boards:/data/uploads/boards
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  resource-service:
+    image: ${ORG:-boanlab}/labmate-resource:${VERSION:-latest}
+    build:
+      context: ./backend
+      dockerfile: services/resource/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SERVICE_NAME: resource
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labmate}:${POSTGRES_PASSWORD}@postgres:5432/labmate_resource
+      UPLOAD_DIR: /data/uploads/resource
+    volumes:
+      - ./data/uploads/resource:/data/uploads/resource
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: ${ORG:-boanlab}/labmate-frontend:${VERSION:-latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # 빌드 산출물을 nginx로 서빙. 개발 시에는 `npm run dev`(5173) 사용.
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:80"
+    volumes:
+      - ./deploy/nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./data/uploads:/srv/uploads:ro
+    depends_on:
+      - members-service
+      - projects-service
+      - funds-service
+      - attendance-service
+      - boards-service
+      - resource-service
+      - frontend

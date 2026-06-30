@@ -1,0 +1,40 @@
+# 개발 오버라이드 — 소스 코드를 마운트하고 --reload 로 즉시 반영(빠른 반복).
+# 운영 배포 시에는 이 파일을 사용하지 않는다(docker compose -f docker-compose.yml up).
+services:
+  members-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/services/members/app:/app/app
+      - ./backend/libs/common/labmate_common:/usr/local/lib/python3.12/site-packages/labmate_common
+      - ./data/uploads/members:/data/uploads/members
+
+  projects-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/services/projects/app:/app/app
+      - ./backend/libs/common/labmate_common:/usr/local/lib/python3.12/site-packages/labmate_common
+      - ./data/uploads/projects:/data/uploads/projects
+
+  funds-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/services/funds/app:/app/app
+      - ./backend/libs/common/labmate_common:/usr/local/lib/python3.12/site-packages/labmate_common
+
+  attendance-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/services/attendance/app:/app/app
+      - ./backend/libs/common/labmate_common:/usr/local/lib/python3.12/site-packages/labmate_common
+
+  boards-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/services/boards/app:/app/app
+      - ./backend/libs/common/labmate_common:/usr/local/lib/python3.12/site-packages/labmate_common
+
+  resource-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/services/resource/app:/app/app
+      - ./backend/libs/common/labmate_common:/usr/local/lib/python3.12/site-packages/labmate_common

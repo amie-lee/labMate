@@ -1,0 +1,57 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+import { api, apiError } from "../api/client";
+import { fileUrl } from "../api/config";
+
+export default function Login() {
+  const { login } = useAuth();
+  const nav = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [brand, setBrand] = useState<{ login_logo?: string; login_subtitle?: string }>({});
+  useEffect(() => { api.get("/boards/branding").then((r) => setBrand(r.data)).catch(() => {}); }, []);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setErr("");
+    setBusy(true);
+    try {
+      const { mustChange } = await login(email, password);
+      nav(mustChange ? "/change-password" : "/");
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="login-wrap">
+      <form className="login-card" onSubmit={submit}>
+        <div className="brand">
+          {brand.login_logo ? <img className="brand-logo" src={fileUrl(brand.login_logo)} alt="로고" style={{ width: "100%", maxWidth: 200, height: "auto", display: "block", margin: 0 }} /> : <><span className="brand-badge">L</span>LabMate</>}
+        </div>
+        <div className="muted" style={{ marginTop: 2, marginBottom: 20 }}>
+          {brand.login_subtitle || "연구실 그룹웨어"}
+        </div>
+        <label>이메일</label>
+        <input data-testid="login-email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
+        <label>비밀번호</label>
+        <input
+          data-testid="login-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+        {err && <div className="form-err" data-testid="login-error">{err}</div>}
+        <button className="btn primary" data-testid="login-submit" disabled={busy} style={{ marginTop: 12, width: "100%" }}>
+          {busy ? "로그인 중…" : "로그인"}
+        </button>
+      </form>
+    </div>
+  );
+}

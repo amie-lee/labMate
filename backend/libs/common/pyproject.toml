@@ -1,0 +1,23 @@
+[project]
+name = "labmate-common"
+version = "0.1.0"
+description = "LabMate 서비스 공통 라이브러리 (설정·DB·인증·의존성)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyjwt>=2.9",
+    "bcrypt>=4.1",
+    "python-multipart>=0.0.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["labmate_common*"]
