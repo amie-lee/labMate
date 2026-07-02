@@ -87,7 +87,7 @@ export default function Library() {
           <div className="bd" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
             <div className="muted small" style={{ marginBottom: 10 }}>{playing.type}</div>
             {ytEmbed(playing.ref) ? (
-              // 영상: 화면 안에 들어오도록 크기 캡(16:9), 설명은 아래에
+              // 영상 16:9 크기 캡, 설명은 아래
               <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9", maxHeight: "58vh", margin: "0 auto", borderRadius: 10, overflow: "hidden", background: "#000" }}>
                 <iframe title={playing.title} src={ytEmbed(playing.ref)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
               </div>

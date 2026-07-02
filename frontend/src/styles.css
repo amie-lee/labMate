@@ -161,6 +161,9 @@ body.dark .kpi.k-red { background: #2c1816; border-color: #4f2e2a; } body.dark .
 .tbl { width: 100%; border-collapse: collapse; min-width: 480px; }
 .tbl th, .tbl td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line2); font-size: 13.5px; white-space: nowrap; }
 .tbl td { line-height: 1.55; }
+/* 학생별 과제 지급 팝업 — 14열(관리코드+12개월+합계)을 한 팝업에 담기 위한 콤팩트 표 */
+.pay-detail-tbl { min-width: 0; }
+.pay-detail-tbl th, .pay-detail-tbl td { padding: 4px 7px; font-size: 10.5px; line-height: 1.4; }
 .tbl th { color: var(--sub); font-size: 11.5px; font-weight: 700; letter-spacing: .3px; cursor: default; position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--line); }
 .tbl th.sortable { cursor: pointer; } .tbl th.sortable:hover { color: var(--brand); }
 .tbl tbody tr:nth-child(even) { background: var(--soft); }
@@ -226,18 +229,19 @@ body.dark .cal .day:hover { border-color: #33415a; }
 .rackcab { background: #22262e; border: 1px solid #2c313b; border-radius: 14px; padding: 10px; min-width: 0; }
 .rackcab-h { display: flex; justify-content: space-between; color: #e7eaef; font-weight: 700; font-size: 13px; padding: 4px 6px 9px; }
 .rackcab-h .pill { background: #363c47; color: #aeb6c6; }
-.rackcab-b { background: #15181e; border-radius: 8px; padding: 5px; display: flex; flex-direction: column; gap: 2px; max-height: 62vh; overflow-y: auto; }
-.uslot { position: relative; display: flex; align-items: center; gap: 8px; height: 26px; border-radius: 5px; padding: 0 9px; font-size: 11.5px; }
+.rackcab-b { background: #15181e; border-radius: 8px; padding: 5px; display: flex; flex-direction: column; gap: 4px; max-height: 62vh; overflow-y: auto; }
+.uslot { position: relative; display: flex; align-items: center; gap: 8px; height: 28px; border-radius: 5px; padding: 0 9px; font-size: 11.5px; }
 .uslot.uslot-over { outline: 2px dashed var(--brand); outline-offset: -2px; background: rgba(63,93,125,.25); }
 .uslot .un { color: #6a7280; font-size: 9.5px; width: 38px; flex-shrink: 0; }
 .uslot.empty { background: repeating-linear-gradient(45deg, #1b1f26, #1b1f26 6px, #191d24 6px, #191d24 12px); }
 .uslot.empty .uempty { color: #454b56; font-size: 10.5px; }
-.uslot.filled { background: linear-gradient(90deg, #2a313c, #262c36); border: 1px solid #343b47; border-left: 3px solid var(--dc); cursor: default; }
-.uslot.multi { background: linear-gradient(180deg, #2c333f, #242a34); align-items: center; }
-.uslot .udot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.uslot .uname { color: #e7eaef; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.uslot .usize { background: var(--dc); color: #fff; font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px; }
-.uslot .utype { color: #8b94a3; font-size: 10px; }
+.uslot.filled { background: linear-gradient(90deg, color-mix(in srgb, var(--dc) 55%, #191d24), color-mix(in srgb, var(--dc) 34%, #191d24)); border: 1px solid color-mix(in srgb, var(--dc) 55%, #2c313b); border-left: 4px solid var(--dc); cursor: default; }
+.uslot.multi { background: linear-gradient(180deg, color-mix(in srgb, var(--dc) 55%, #191d24), color-mix(in srgb, var(--dc) 34%, #191d24)); align-items: center; }
+.uslot.filled .un { color: rgba(255,255,255,.6); }
+.uslot .udot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+.uslot .uname { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+.uslot .usize { background: rgba(0,0,0,.35); color: #fff; font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px; }
+.uslot .utype { color: #eef1f5; font-size: 10px; opacity: .85; }
 .rk-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .rk-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); }
 .rk-leg-d { width: 11px; height: 11px; border-radius: 3px; }
@@ -281,9 +285,26 @@ blockquote { border-left: 3px solid var(--line); padding-left: 12px; margin: 8px
 /* 다크모드 토글 */
 .theme-toggle { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; width: 36px; height: 34px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
 
+/* ── 반응형 오버플로우 보정(전역) ─────────────────────────────
+   A. 표가 든 카드는 어느 폭에서도 카드 안에서 가로 스크롤 → 페이지 전체가 오른쪽으로 밀리는 것 방지.
+      (:has로 표를 포함한 카드만 타겟 — 칸반/차트 등 다른 카드는 영향 없음) */
+.card:has(table) { overflow-x: auto; }
+/* B·C. 팝업/상세 표·메타표·모달 본문: 긴 값(이메일·URL·비고·코드)이 줄바꿈되도록 nowrap 해제 + 강제 줄바꿈 */
+.modal .tbl { min-width: 0; }   /* 전역 .tbl min-width:480 해제 → 표가 팝업 폭에 맞아 우측 여백(셀·모달 패딩) 유지 */
+.modal .tbl td, .metatbl td { white-space: normal; overflow-wrap: anywhere; }
+.modal-b { overflow-wrap: anywhere; }
+.modal-b img { max-width: 100%; height: auto; }
+.modal-b table { max-width: 100%; }
+/* E. 2·3열 폼: 자식이 내용 너비만큼 안 줄어 넘치는 것 방지(그리드 기본 min-width:auto 보정) */
+.grid2 > *, .grid3 > * { min-width: 0; }
+
 /* 모바일 상단바/드로어 */
 .backdrop { display: none; }
-.hamburger { display: none; background: transparent; border: none; color: #fff; font-size: 21px; line-height: 1; padding: 4px 8px; }
+.hamburger { display: inline-block; background: transparent; border: none; color: #fff; font-size: 21px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+/* 데스크탑: 사이드바 접기 */
+@media (min-width: 861px) {
+  .appshell.sidebar-collapsed .side { display: none; }
+}
 @media (max-width: 860px) {
   .hamburger { display: inline-block; }
   .appbar-tag { display: none; }

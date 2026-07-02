@@ -31,7 +31,7 @@ def _blacklisted(jti: str) -> bool:
     try:
         return bool(_redis.exists(BLACKLIST_PREFIX + jti))
     except redis.RedisError:
-        return False  # redis 장애 시 토큰 거부보다 통과(가용성 우선). 운영 시 정책 조정.
+        return False  # redis 장애 시 통과(가용성 우선)
 
 
 def _can_manage_users(user: CurrentUser, db: Session) -> bool:
@@ -57,7 +57,7 @@ def login(body: schemas.LoginIn, db: Session = Depends(get_db)):
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     return schemas.TokenOut(
-        access=create_access_token(sub=user.id, role=user.role, name=user.name, delegated=user.delegated_admin, org=user.org_id),
+        access=create_access_token(sub=user.id, role=user.role, name=user.name, delegated=user.delegated_admin, infra=user.infra_manager, org=user.org_id),
         refresh=create_refresh_token(sub=user.id),
         must_change_password=user.must_change_password,
     )
@@ -74,7 +74,7 @@ def refresh(body: schemas.RefreshIn, db: Session = Depends(get_db)):
     user = db.get(User, claims["sub"])
     if not user or not user.active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "사용자를 찾을 수 없습니다")
-    return schemas.AccessOut(access=create_access_token(sub=user.id, role=user.role, name=user.name, delegated=user.delegated_admin, org=user.org_id))
+    return schemas.AccessOut(access=create_access_token(sub=user.id, role=user.role, name=user.name, delegated=user.delegated_admin, infra=user.infra_manager, org=user.org_id))
 
 
 @router.post("/logout", response_model=schemas.MessageOut)
@@ -131,8 +131,12 @@ def change_password(
 
 # ───────────────────────── 구성원 관리 ─────────────────────────
 @router.get("/users", response_model=list[schemas.UserOut])
-def list_users(_: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    return list(db.scalars(select(User).order_by(User.created_at)))
+def list_users(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    stmt = select(User).order_by(User.created_at)
+    # 비활성(오프보딩) 구성원은 교수·관리자만 조회
+    if user.role not in ("prof", "admin"):
+        stmt = stmt.where(User.active.is_(True))
+    return list(db.scalars(stmt))
 
 
 @router.post("/users", response_model=schemas.UserOut, status_code=201)
@@ -165,13 +169,12 @@ def update_user(user_id: str, body: schemas.UserUpdate, actor: CurrentUser = Dep
     tmp = data.pop("temp_password", None)
     if "role" in data and data["role"] not in ROLES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "유효하지 않은 role")
-    # 권한상승 방지: 위임 학생(staff/admin/prof 아님)은 교수·관리자 계정 수정,
-    # 그리고 위임(delegated_admin)·역할 변경을 할 수 없다.
+    # 권한상승 방지: 위임 학생은 교수·관리자 계정 및 권한·역할 변경 불가
     actor_admin = actor.role in ("prof", "staff", "admin") or bool(actor.delegated_admin)
     if not actor_admin:
         if user.role in ("prof", "staff", "admin"):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "교수·관리자 계정은 수정할 수 없습니다")
-        if "delegated_admin" in data or "role" in data:
+        if "delegated_admin" in data or "infra_manager" in data or "role" in data:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "권한·역할 변경은 교수/관리자만 가능합니다")
     for k, v in data.items():
         setattr(user, k, v)

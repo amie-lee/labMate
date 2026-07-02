@@ -1,5 +1,4 @@
-// 문서를 새 창에 깔끔히 렌더링하고 인쇄 대화상자를 열어 "PDF로 저장"할 수 있게 한다.
-// (별도 라이브러리 없이 브라우저 인쇄→PDF 저장 사용)
+// 새 창 렌더링 + 브라우저 인쇄로 PDF 저장(별도 라이브러리 없음)
 export function printDoc(title: string, innerHtml: string) {
   const w = window.open("", "_blank", "width=860,height=1000");
   if (!w) { alert("팝업이 차단되었습니다. 팝업을 허용해 주세요."); return; }

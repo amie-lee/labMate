@@ -22,8 +22,8 @@ from .routers import router
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     rename_columns(engine, [
-        ("att_correction_reqs", "status_req", "requested_status"),  # 요청 근무상태
-        ("att_correction_reqs", "state", "status"),                 # 승인상태(타 서비스와 일관)
+        ("att_correction_reqs", "status_req", "requested_status"),
+        ("att_correction_reqs", "state", "status"),
         ("leaves", "start", "start_date"),
         ("leaves", "end", "end_date"),
     ])

@@ -17,7 +17,7 @@ const EMPTY = { asset_class: "연구실", asset_no: "", name: "", spec: "", mode
 export default function Assets() {
   const { me } = useAuth();
   const CLS = useConfig<string[]>("asset_types", CLS_FB);
-  const canManage = !!me && (["prof", "staff", "admin"].includes(me.role) || !!me.delegated_admin);
+  const canManage = !!me && (["prof", "staff", "admin"].includes(me.role) || !!me.delegated_admin || !!me.infra_manager);
   const [items, setItems] = useState<Asset[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [grants, setGrants] = useState<any[]>([]);
@@ -53,9 +53,9 @@ export default function Assets() {
       closeForm(); load();
     } catch (e) { setErr(apiError(e)); }
   }
-  async function del(a: Asset) {
-    if (!await confirmDialog(`자산 "${a.name}"을(를) 삭제할까요?`, { danger: true })) return;
-    try { await api.delete(`/resource/assets/${a.id}`); load(); } catch (e) { setErr(apiError(e)); }
+  async function del(a: Asset): Promise<boolean> {
+    if (!await confirmDialog(`자산 "${a.name}"을(를) 삭제할까요?`, { danger: true })) return false;
+    try { await api.delete(`/resource/assets/${a.id}`); load(); return true; } catch (e) { setErr(apiError(e)); return false; }
   }
 
   const ownerName = (a: Asset) => users.find((u) => u.id === a.owner_id)?.name || a.owner_id || "—";
@@ -76,8 +76,7 @@ export default function Assets() {
     { key: "note", label: "비고", render: (a) => <span className="small muted">{a.note || "—"}</span> },
     ...(canManage ? [{ key: "act", label: "작업", nowrap: true, render: (a: Asset) => (
       <span style={{ whiteSpace: "nowrap" }}>
-        <button className="btn ghost sm" data-testid={`as-edit-${a.id}`} onClick={() => editAsset(a)}>수정</button>{" "}
-        <button className="btn ghost sm" data-testid={`as-del-${a.id}`} style={{ color: "var(--bad)" }} onClick={() => del(a)}>삭제</button>
+        <button className="btn ghost sm" data-testid={`as-edit-${a.id}`} onClick={() => editAsset(a)}>수정</button>
       </span>
     ) } as Col<Asset>] : []),
   ];
@@ -108,14 +107,15 @@ export default function Assets() {
             <div><label>과제</label><select data-testid="as-proj" value={form.project_id} onChange={(e) => up("project_id", e.target.value)}><option value="">(없음)</option>{grants.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</select></div>
             <div style={{ gridColumn: "1 / -1" }}><label>비고</label><input data-testid="as-note" value={form.note} onChange={(e) => up("note", e.target.value)} /></div>
           </div>
-          <div className="bd" style={{ display: "flex", gap: 8 }}>
+          <div className="bd" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn primary" data-testid="asset-add-submit">{editId ? "저장" : "등록"}</button>
             <button type="button" className="btn ghost" onClick={closeForm}>취소</button>
+            {editId && <button type="button" data-testid="asset-del" onClick={async () => { const a = items.find((x) => x.id === editId); if (a && await del(a)) closeForm(); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--bad)", fontSize: 11.5, textDecoration: "underline", cursor: "pointer", opacity: 0.85 }}>삭제</button>}
           </div>
         </form>
       )}
 
-      <DataTable<Asset> rows={items} cols={cols} testid="asset-table" pageSize={12} defaultSort="name"
+      <DataTable<Asset> rows={items} cols={cols} testid="asset-table" pageSize={12} autoHeight defaultSort="name"
         searchPlaceholder="자산명·번호·규격·모델·위치·책임자 검색…"
         searchKeys={(a) => [a.name, a.asset_no, a.spec, a.model, a.building, a.floor, a.room, a.location, a.note, ownerName(a), projCode(a)].join(" ")}
         chips={{ get: (a) => a.asset_class, values: CLS }}

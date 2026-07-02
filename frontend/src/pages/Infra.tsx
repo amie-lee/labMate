@@ -10,12 +10,14 @@ interface Dev { id: string; rack: string; pos: number; size: number; type: strin
 interface Rack { id: string; name: string; u_height: number; order: number; }
 const TYPES_FB = ["서버", "스위치", "스토리지", "GPU", "기타"];
 const DCOL: Record<string, string> = { "서버": "#3f5d7d", "GPU": "#3a9b9b", "스위치": "#2e9e6b", "스토리지": "#c2891b", "VPN": "#7b66c4", "KVM": "#5a6478" };
+// 프리셋 외 종류용 팔레트
+const PALETTE = ["#c25b5b", "#4a7fb5", "#8a9b2e", "#b8557f", "#2f8f8f", "#d17a2e", "#6b7cc4", "#4f9d6a", "#a05fb0", "#b59a2e", "#5b8fb5", "#9b5a5a"];
 
 export default function Infra() {
   const { me } = useAuth();
   const TYPES = useConfig<string[]>("device_types", TYPES_FB);
   const defU = Number(useConfig<any>("rack_max_u", 42)) || 42;
-  const canManage = !!me && (["prof", "staff", "admin"].includes(me.role) || !!me.delegated_admin);
+  const canManage = !!me && (["prof", "staff", "admin"].includes(me.role) || !!me.delegated_admin || !!me.infra_manager);
   const [items, setItems] = useState<Dev[]>([]);
   const [racks, setRacks] = useState<Rack[]>([]);
   const [err, setErr] = useState("");
@@ -25,6 +27,7 @@ export default function Infra() {
   const [rackForm, setRackForm] = useState<null | { id?: string; name: string; u_height: number }>(null);
   const [drag, setDrag] = useState<Dev | null>(null);
   const [over, setOver] = useState<string>("");   // `${rack}:${u}`
+  const [detail, setDetail] = useState<Dev | null>(null);   // 장비 정보 팝업
 
   async function load() {
     try {
@@ -83,6 +86,10 @@ export default function Infra() {
   }
 
   const types = [...new Set(items.map((d) => d.type))];
+  // 종류별 색 — 프리셋 우선, 그 외 팔레트 배정
+  const nonPreset = [...new Set([...TYPES, ...items.map((d) => d.type)])].filter((t) => !DCOL[t]);
+  const colorOf = (t: string) => DCOL[t] || PALETTE[((nonPreset.indexOf(t) % PALETTE.length) + PALETTE.length) % PALETTE.length] || "#5a6478";
+  const posRange = (d: Dev) => (d.size || 1) > 1 ? `U${d.pos + (d.size || 1) - 1}–U${d.pos}` : `U${d.pos}`;
 
   return (
     <div data-testid="page-infra">
@@ -119,20 +126,20 @@ export default function Infra() {
             <div><label>크기(U)</label><input data-testid="d-size" type="number" value={form.size} onChange={(e) => setForm({ ...form, size: Number(e.target.value) })} /></div>
             <div style={{ gridColumn: "1 / -1" }}><label>비고</label><input data-testid="d-note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="예: 보증 만료 2026-12 / 담당자 비상연락" /></div>
           </div>
-          <div className="bd" style={{ display: "flex", gap: 8 }}>
+          <div className="bd" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn primary" data-testid="dev-add-submit">{editId ? "저장" : "등록"}</button>
             <button type="button" className="btn ghost" data-testid="dev-add-cancel" onClick={closeDevice}>취소</button>
-            {editId && <button type="button" className="btn ghost" data-testid="dev-edit-del" style={{ color: "var(--bad)", marginLeft: "auto" }} onClick={async () => { const d = items.find((x) => x.id === editId); if (d && await delDevice(d)) closeDevice(); }}>삭제</button>}
+            {editId && <button type="button" data-testid="dev-edit-del" onClick={async () => { const d = items.find((x) => x.id === editId); if (d && await delDevice(d)) closeDevice(); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--bad)", fontSize: 11.5, textDecoration: "underline", cursor: "pointer", opacity: 0.85 }}>삭제</button>}
           </div>
         </form>
       )}
 
       <Card title="랙 배치도" extra={<span className="pill">장비 {items.length}대 · 랙 {racks.length}개{canManage && " · 드래그로 이동"}</span>}>
         <div className="rk-legend">
-          {types.map((t) => <span className="rk-leg" key={t}><span className="rk-leg-d" style={{ background: DCOL[t] || "#5a6478" }} />{t}</span>)}
+          {types.map((t) => <span className="rk-leg" key={t}><span className="rk-leg-d" style={{ background: colorOf(t) }} />{t}</span>)}
           {!types.length && <span className="muted small">등록된 장비 없음</span>}
         </div>
-        <div className="rackrow" data-testid="rack-grid" style={{ ["--rkn" as any]: Math.min(racks.length, 5) }}>
+        <div className="rackrow" data-testid="rack-grid" style={{ ["--rkn" as any]: Math.min(racks.length, 4) }}>
           {racks.map((rk) => {
             const UTOP = rk.u_height;
             const devs = items.filter((d) => d.rack === rk.name);
@@ -143,15 +150,14 @@ export default function Infra() {
             for (let u = UTOP; u >= 1; u--) {
               const d = startAt[u];
               if (d) {
-                const sz = d.size || 1; const c = DCOL[d.type] || "#5a6478"; const h = sz * 26 + (sz - 1) * 2;
-                const rng = sz > 1 ? `U${d.pos + sz - 1}–U${d.pos}` : `U${d.pos}`;
+                const sz = d.size || 1; const c = colorOf(d.type); const h = sz * 28 + (sz - 1) * 4;
+                const rng = posRange(d);
                 slots.push(
-                  <div key={u} className={"uslot filled" + (sz > 1 ? " multi" : "")} style={{ ["--dc" as any]: c, height: h, cursor: canManage ? "grab" : undefined }}
-                    title={`${d.name} (${d.type}, ${sz}U)`} draggable={canManage} onDragStart={() => setDrag(d)} onDragEnd={() => { setDrag(null); setOver(""); }}>
+                  <div key={u} className={"uslot filled" + (sz > 1 ? " multi" : "")} style={{ ["--dc" as any]: c, height: h, cursor: canManage ? "grab" : "pointer" }}
+                    title={`${d.name} (${d.type}, ${sz}U) — 클릭하여 정보 보기`} draggable={canManage} onDragStart={() => setDrag(d)} onDragEnd={() => { setDrag(null); setOver(""); }}
+                    onClick={() => setDetail(d)} data-testid={`dev-slot-${d.id}`}>
                     <span className="un">{rng}</span><span className="udot" style={{ background: c }} />
                     <span className="uname">{d.name}</span>{sz > 1 && <span className="usize">{sz}U</span>}<span className="utype">{d.type}</span>
-                    {canManage && <button className="uslot-x" title="수정" onClick={(e) => { e.stopPropagation(); editDevice(d); }} style={{ position: "absolute", top: 2, right: 22, background: "none", border: "none", color: "#fff", cursor: "pointer", opacity: .7 }}>✎</button>}
-                    {canManage && <button className="uslot-x" title="삭제" onClick={(e) => { e.stopPropagation(); delDevice(d); }} style={{ position: "absolute", top: 2, right: 4, background: "none", border: "none", color: "#fff", cursor: "pointer", opacity: .7 }}>✕</button>}
                   </div>
                 );
                 u -= sz - 1;
@@ -184,6 +190,29 @@ export default function Infra() {
           {!racks.length && <div className="muted">랙이 없습니다 — "+ 랙 추가"로 생성하세요</div>}
         </div>
       </Card>
+
+      {detail && (
+        <div className="modal-ovl" onClick={(e) => { if (e.target === e.currentTarget) setDetail(null); }}>
+          <div className="modal" data-testid="dev-detail" style={{ width: 460, maxWidth: "92%" }}>
+            <div className="modal-h">
+              <b><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: colorOf(detail.type), marginRight: 7, verticalAlign: "middle" }} />{detail.name}</b>
+              <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {canManage && <button className="btn ghost sm" data-testid="dev-detail-edit" onClick={() => { editDevice(detail); setDetail(null); }}>수정</button>}
+                <button className="btn ghost sm" onClick={() => setDetail(null)}>✕</button>
+              </span>
+            </div>
+            <div className="modal-b">
+              <table className="tbl"><tbody>
+                <tr><th style={{ width: 110 }}>랙</th><td>{detail.rack}</td></tr>
+                <tr><th>종류</th><td><span className="badge" style={{ background: colorOf(detail.type) + "22", color: colorOf(detail.type) }}>{detail.type}</span></td></tr>
+                <tr><th>위치</th><td>{posRange(detail)} <span className="muted small">({detail.size || 1}U)</span></td></tr>
+                <tr><th>IP주소</th><td>{detail.ip || "—"}</td></tr>
+                <tr><th>비고</th><td style={{ whiteSpace: "pre-wrap" }}>{detail.note || "—"}</td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

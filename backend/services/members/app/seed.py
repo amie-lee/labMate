@@ -1,10 +1,4 @@
-"""관리자 계정 시드(.env 기반).
-
-첫 배포 시 관리자 계정이 없으면 .env의 ADMIN_EMAIL / ADMIN_PASSWORD 로 자동 생성한다.
-가입은 없으며, 관리자가 로그인 후 구성원을 추가하는 형태.
-
-수동 실행: docker compose exec members-service python -m app.seed
-"""
+"""관리자 계정 시드 — 관리자 계정이 없으면 .env(ADMIN_EMAIL/PASSWORD)로 생성(가입 없음)."""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -23,7 +17,7 @@ def ensure_admin() -> bool:
     db = SessionLocal()
     try:
         if db.scalar(select(User).where(User.role == "admin")):
-            return False   # 이미 관리자 존재 — 아무것도 하지 않음
+            return False
         db.add(User(
             email=settings.admin_email, name=ADMIN_NAME, role="admin",
             position="관리자", grade="",

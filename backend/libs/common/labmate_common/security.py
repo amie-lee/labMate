@@ -42,9 +42,9 @@ def _encode(claims: dict[str, Any], expires: timedelta, token_type: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(*, sub: str, role: str, name: str, delegated: bool = False, org: str = "lab1") -> str:
+def create_access_token(*, sub: str, role: str, name: str, delegated: bool = False, infra: bool = False, org: str = "lab1") -> str:
     return _encode(
-        {"sub": sub, "role": role, "name": name, "delegated_admin": delegated, "org": org},
+        {"sub": sub, "role": role, "name": name, "delegated_admin": delegated, "infra_manager": infra, "org": org},
         timedelta(minutes=settings.access_token_minutes),
         "access",
     )

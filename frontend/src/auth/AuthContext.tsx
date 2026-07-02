@@ -10,6 +10,7 @@ export interface Me {
   phone?: string;
   researcher_no?: string;
   delegated_admin: boolean;
+  infra_manager?: boolean;
   must_change_password: boolean;
 }
 

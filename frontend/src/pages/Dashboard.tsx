@@ -6,18 +6,36 @@ import { useAuth } from "../auth/AuthContext";
 import { Kpi, Card, statusClass } from "../ui/kit";
 
 
-interface Project { id: string; code: string; name: string; agency: string; status: string; goals: Record<string, number>; start: string | null; end: string | null; lead_id: string; pm_id: string; members: string[]; }
+interface Project { id: string; code: string; name: string; agency: string; status: string; goals: Record<string, number>; start: string | null; end: string | null; lead_id: string; pm_id: string; members: string[]; meta?: Record<string, any>; }
 interface Budget { project_id: string; category: string; allocated: number; spent: number; }
-interface Pub { kind: string; project_id: string; scope: string; index_type: string; index_grade: string; }
+interface Pub { kind: string; project_id: string; scope: string; index_type: string; index_grade: string; funding: string; }
+// 과제 성과 집계 조건: project_id 연결 또는 사사에 과제 코드 포함(다중 사사)
+function pubFundsProject(u: Pub, p: Project): boolean {
+  if (u.project_id === p.id) return true;
+  if (!p.code) return false;
+  return (u.funding || "").split(/[,;]/).map((s) => s.trim()).includes(p.code);
+}
+// 다중 사사 실적은 1/n 지분으로 카운트(n = 사사 개수).
+function pubShare(u: Pub): number {
+  const n = (u.funding || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean).length;
+  return n > 1 ? 1 / n : 1;
+}
 interface Notice { id: string; acked_user_ids: string[]; target_user_ids?: string[]; }
 interface Activity { id: string; code: string; name: string; category: string; status: string; start: string | null; end: string | null; pm_id: string; members: string[]; }
-// 진행 상태는 기간으로 자동 판정 — 목록/예산 화면과 동일 기준(autoStatus)으로 통일
+// 기간 기반 자동 상태(예정/진행 중/완료)
 function liveStatus(start: string | null, end: string | null): string {
   const t = todayKST();
   if (start && t < start) return "예정";
   if (end && t > end) return "완료";
   return "진행 중";
 }
+// 연구과제 상태·기한은 해당 연도 기간 기준(미입력 시 총 과제기간)
+function grantStatus(p: Project): string {
+  const m = p.meta || {};
+  if (m.year_start || m.year_end) return liveStatus(m.year_start || null, m.year_end || null);
+  return liveStatus(p.start, p.end);
+}
+const grantEnd = (p: Project): string | null => (p.meta?.year_end) || p.end;
 interface DTask { id: string; project_id: string; title: string; status: string; due: string | null; assignee_id: string; }
 interface Att { uid: string; status: string; check_in: string; check_out: string; }
 interface Appr { id: string; doc_no: string; type: string; title: string; by_id: string; amount: number; steps: any[]; status: string; }
@@ -26,6 +44,9 @@ interface User { id: string; name: string; role: string; active: boolean; }
 const STCOL: Record<string, string> = { "업무 중": "#2e9e6b", "외근": "#7b66c4", "출장": "#3a9b9b", "휴가": "#c2891b", "퇴근": "#5a6478", "미체크": "#d8584f" };
 const ROLE_KO: Record<string, string> = { prof: "교수", phd: "박사과정", master: "석사과정", under: "학사과정", staff: "행정", admin: "관리" };
 
+// 포트폴리오 성과 지표 순서 [시스템키, 표시라벨] — SCI/KCI/국제·국내학술대회/국제·국내특허.
+const PORT_INDS: [string, string][] = [["SCI", "SCI"], ["KCI", "KCI"], ["국제학술대회", "국제학술대회"], ["국내학술대회", "국내학술대회"], ["국외특허", "국제특허"], ["국내특허", "국내특허"]];
+const nfNum = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 function metric(p: Pub): string {
   if (p.kind === "논문") { const ix = p.index_grade || p.index_type; return /SCI|SSCI|SCOPUS/i.test(ix) ? "SCI" : "KCI"; }
   if (p.kind === "학술대회") return p.scope === "국외" ? "국제학술대회" : "국내학술대회";
@@ -96,7 +117,8 @@ export default function Dashboard() {
   // 포트폴리오: 관리자급(교수·행정·위임)은 연구실 전체 과제, 학생은 본인 참여 과제만
   const seesAll = isMgr;
   const isMine = (p: Project) => p.lead_id === me?.id || p.pm_id === me?.id || (p.members || []).includes(me?.id || "");
-  const ps = projects.filter((p) => liveStatus(p.start, p.end) !== "완료" && (seesAll || isMine(p)));
+  // 균등(YYYY) 과제는 수행 과제 카운트·포트폴리오에서 제외.
+  const ps = projects.filter((p) => grantStatus(p) !== "완료" && !/균등\s*\(\d{4}\)/.test(p.code || "") && (seesAll || isMine(p)));
   const budgetOf = (pid: string) => {
     const b = budgets.filter((x) => x.project_id === pid).reduce((a, x) => ({ allocated: a.allocated + x.allocated, spent: a.spent + x.spent }), { allocated: 0, spent: 0 });
     return b.allocated ? Math.round((b.spent / b.allocated) * 100) : 0;
@@ -105,9 +127,10 @@ export default function Dashboard() {
     const g = p.goals || {};
     const tg = Object.values(g).reduce((a, v) => a + v, 0);
     const counts: Record<string, number> = {};
-    pubs.filter((u) => u.project_id === p.id).forEach((u) => { const m = metric(u); counts[m] = (counts[m] || 0) + 1; });
-    const ta = Object.keys(g).reduce((a, k) => a + Math.min(counts[k] || 0, g[k]), 0);
-    return { ta, tg };
+    pubs.filter((u) => pubFundsProject(u, p)).forEach((u) => { const m = metric(u); counts[m] = (counts[m] || 0) + pubShare(u); });
+    const ta = +Object.keys(g).reduce((a, k) => a + Math.min(counts[k] || 0, g[k]), 0).toFixed(1);
+    const tot = +Object.values(counts).reduce((a, v) => a + v, 0).toFixed(1);   // 목표 미설정이어도 실적 총 달성수
+    return { ta, tg, tot, counts };
   };
   const dday = (end: string | null) => end ? Math.ceil((+new Date(end) - Date.now()) / 86400000) : null;
 
@@ -149,8 +172,14 @@ export default function Dashboard() {
     const mem = users.filter((u) => u.role !== "admin");
     const activeN = mem.filter((u) => u.active !== false).length;
     const roleOrder = ["prof", "phd", "master", "under", "staff"];
-    const byRole: Record<string, number> = {};
-    mem.forEach((u) => { byRole[u.role] = (byRole[u.role] || 0) + 1; });
+    const byRole: Record<string, number> = {};        // 역할 표시 여부용(전체)
+    const byRoleActive: Record<string, number> = {};   // 재직(활성)
+    const byRoleInactive: Record<string, number> = {}; // 비활성
+    mem.forEach((u) => {
+      byRole[u.role] = (byRole[u.role] || 0) + 1;
+      const map = u.active !== false ? byRoleActive : byRoleInactive;
+      map[u.role] = (map[u.role] || 0) + 1;
+    });
     return (
       <div data-testid="page-dashboard">
         <h1 style={{ marginBottom: 8 }}>관리자 현황 <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· 한눈에 보기</span></h1>
@@ -165,9 +194,9 @@ export default function Dashboard() {
               <thead><tr><th>직급</th><th>인원</th></tr></thead>
               <tbody>
                 {roleOrder.filter((r) => byRole[r]).map((r) => (
-                  <tr key={r}><td>{ROLE_KO[r] || r}</td><td><b>{byRole[r]}</b>명</td></tr>
+                  <tr key={r}><td>{ROLE_KO[r] || r}</td><td><b>{byRoleActive[r] || 0}</b>명{byRoleInactive[r] ? <span className="muted small"> (비활성 {byRoleInactive[r]})</span> : ""}</td></tr>
                 ))}
-                <tr><td><b>합계</b></td><td><b>{mem.length}</b>명 <span className="muted small">(재직 {activeN})</span></td></tr>
+                <tr><td><b>합계</b></td><td><b>{activeN}</b>명{mem.length - activeN ? <span className="muted small"> (비활성 {mem.length - activeN})</span> : ""}</td></tr>
               </tbody>
             </table>
           </Card>
@@ -220,7 +249,6 @@ export default function Dashboard() {
           <div className="n">{ps.length}</div>
           <div className="sub">{seesAll ? "연구실 전체 · 진행 중" : "내 참여 · 진행 중"}</div>
         </div>
-        {/* 결재 대기(관리자) / 할 일(연구원) */}
         {isMgr ? (
           <div className={"kpi " + (myTurn.length ? "k-amber" : "k-green")} style={{ gridColumn: "span 2", cursor: "pointer" }} data-testid="kpi-approvals" onClick={() => nav("/approvals")} title="전자결재로 이동">
             <div className="l">결재 대기</div>
@@ -243,7 +271,6 @@ export default function Dashboard() {
             </div>
           )) : <div className="muted small">예정된 일정 없음</div>}
         </div>
-        {/* span6: 연구원 현황(관리자) / 내 할 일(연구원) */}
         {isMgr ? (
           <div className="dash-rs" style={{ gridColumn: "span 6" }}>
             <Card title="연구원 현황" extra={<a style={{ cursor: "pointer", fontSize: 12 }} onClick={() => nav("/members")}>구성원 →</a>} testid="dash-members">
@@ -292,16 +319,19 @@ export default function Dashboard() {
       <Card title="과제 포트폴리오" extra={<a style={{ cursor: "pointer", fontSize: 12 }} onClick={() => nav("/grants")}>과제관리 →</a>}>
         <div className="card scroll" style={{ margin: 0, border: "none" }}>
           <table className="tbl" data-testid="dash-portfolio">
-            <thead><tr><th>과제</th><th>기관</th>{canBudget && <th>예산 집행률</th>}<th>성과(달성/목표)</th><th>기한</th></tr></thead>
+            <thead><tr><th>과제</th><th>기관</th>{canBudget && <th>예산 집행률</th>}<th title="SCI / KCI / 국제학술대회 / 국내학술대회 / 국제특허 / 국내특허">성과</th><th>기한</th></tr></thead>
             <tbody>
               {ps.map((p) => {
-                const ex = budgetOf(p.id); const ach = achievedOf(p); const dd = dday(p.end);
+                const ex = budgetOf(p.id); const ach = achievedOf(p); const dd = dday(grantEnd(p));
                 return (
                   <tr key={p.id}>
-                    <td><a className="lnk" style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => nav(`/grants?open=${p.id}`)}>{p.code}</a><div className="muted small">{p.name}</div></td>
+                    <td><a className="lnk" style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => nav(`/grants?open=${p.id}`)}>{p.code}</a><div className="muted small" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>{p.name}</div></td>
                     <td>{p.agency}</td>
                     {canBudget && <td><div className="bar" style={{ width: 110, display: "inline-block", verticalAlign: "middle" }}><i style={{ width: `${Math.min(ex, 100)}%`, background: ex > 90 ? "var(--bad)" : ex > 75 ? "var(--warn)" : "var(--brand)" }} /></div> <span className="small muted">{ex}%</span></td>}
-                    <td>{ach.tg ? `${ach.ta}/${ach.tg}건` : "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }} title={PORT_INDS.map(([, l]) => l).join(" / ")}>
+                      <div className="small">달성 ({PORT_INDS.map(([k]) => nfNum(ach.counts[k] || 0)).join("/")})</div>
+                      <div className="small muted">목표 ({PORT_INDS.map(([k]) => (p.goals?.[k] || 0)).join("/")})</div>
+                    </td>
                     <td>{dd != null ? (dd >= 0 ? <span className="badge s-info">D-{dd}</span> : <span className="badge s-bad">D+{-dd}</span>) : "—"}</td>
                   </tr>
                 );
@@ -315,13 +345,13 @@ export default function Dashboard() {
       {isMgr && (
         <div className="grid g2">
           <Card title="프로젝트 현황" extra={<a style={{ cursor: "pointer", fontSize: 12 }} onClick={() => nav("/projects")}>프로젝트 →</a>} testid="dash-activities">
-            <table className="tbl">
-              <thead><tr><th>명칭</th><th>분류</th><th>상태</th></tr></thead>
+            <table className="tbl" style={{ tableLayout: "fixed", width: "100%", minWidth: 0 }}>
+              <thead><tr><th>명칭</th><th style={{ width: 74 }}>분류</th><th style={{ width: 80 }}>상태</th></tr></thead>
               <tbody>
                 {openActs.slice(0, 6).map((p) => (
                   <tr key={p.id}>
-                    <td><a className="lnk small" style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => nav(`/projects?open=${p.id}`)}>{p.name}</a></td>
-                    <td className="small muted">{p.category}</td>
+                    <td style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={p.name}><a className="lnk small" style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => nav(`/projects?open=${p.id}`)}>{p.name}</a></td>
+                    <td className="small muted" style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={p.category}>{p.category}</td>
                     <td><span className={statusClass(liveStatus(p.start, p.end))}>{liveStatus(p.start, p.end)}</span></td>
                   </tr>
                 ))}
@@ -337,15 +367,15 @@ export default function Dashboard() {
               <span className="small"><b style={{ color: "#2e9e6b" }}>●</b> 완료 <b>{taskCount["완료"] || 0}</b></span>
               {overdueTasks.length > 0 && <span className="small"><b style={{ color: "var(--bad)" }}>●</b> 지연 <b>{overdueTasks.length}</b></span>}
             </div>
-            <table className="tbl">
-              <thead><tr><th>과제</th><th>업무</th><th>마감</th></tr></thead>
+            <table className="tbl" style={{ tableLayout: "fixed", width: "100%", minWidth: 0 }}>
+              <thead><tr><th style={{ width: 84 }}>과제</th><th>업무</th><th style={{ width: 96 }}>마감</th></tr></thead>
               <tbody>
                 {openTasks.slice(0, 6).map((t) => {
                   const late = t.due && t.due < today0;
                   return (
                     <tr key={t.id}>
-                      <td className="small muted"><div style={{ maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }} title={projCode(t.project_id)}>{projCode(t.project_id)}</div></td>
-                      <td className="small"><div style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.title}>{t.title}</div></td>
+                      <td className="small muted" style={{ overflow: "hidden", textOverflow: "ellipsis", fontWeight: 700 }} title={projCode(t.project_id)}>{projCode(t.project_id)}</td>
+                      <td className="small" style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={t.title}>{t.title}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{t.due ? <span className={"badge " + (late ? "s-bad" : "s-info")}>{t.due}</span> : <span className="muted small">—</span>}</td>
                     </tr>
                   );

@@ -16,7 +16,7 @@ class ParticipationSetIn(BaseModel):
     uid: str
     project_id: str
     month: str            # YYYY-MM
-    rate_pct: int = 0
+    rate_pct: float = 0
     amount: int = 0
 
 
@@ -72,7 +72,7 @@ class ExpenseOut(ExpenseIn):
 class ParticipationIn(BaseModel):
     uid: str
     project_id: str
-    rate_pct: int
+    rate_pct: float
     month: str
 
 
@@ -89,7 +89,7 @@ class PayslipOut(BaseModel):
 class MatrixRow(BaseModel):
     uid: str
     grade: str = ""
-    ratios: dict[str, int] = Field(default_factory=dict)  # project_id -> rate_pct
+    ratios: dict[str, float] = Field(default_factory=dict)  # project_id -> rate_pct
 
 
 class MatrixSaveIn(BaseModel):
@@ -101,7 +101,8 @@ class MatrixSaveIn(BaseModel):
 class YearMatrixRow(BaseModel):
     uid: str
     grade: str = ""
-    monthly: dict[str, int] = Field(default_factory=dict)  # "01".."12" -> rate_pct
+    monthly: dict[str, float] = Field(default_factory=dict)  # "01".."12" -> rate_pct
+    grades: dict[str, str] = Field(default_factory=dict)     # "01".."12" -> 등급(진급 반영), 없으면 grade
 
 
 class YearMatrixSaveIn(BaseModel):

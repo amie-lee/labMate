@@ -20,6 +20,7 @@ export type SheetEntity = {
   list?: string;                  // upsert용 기존 목록 조회
   patchBase?: string;             // upsert용 PATCH 베이스(`/x/`)
   matchKey?: string;              // upsert 매칭 키(단일 필드)
+  matchKeyFn?: (r: any) => string;   // upsert 매칭 키(복합 — 예: 랙+위치). matchKey보다 우선.
   required: string[];
   cols?: [string, string][];      // 단일 시트
   example?: string[];
@@ -33,6 +34,24 @@ export type SheetEntity = {
 
 // 시트 이름은 31자 제한
 const safeName = (s: string) => (s || "Sheet").slice(0, 31);
+
+// cellDates로 읽은 Date 셀 → ISO(YYYY-MM-DD) 문자열. UTC 자정이므로 getUTC*로 뽑아 시간대 밀림 방지
+function normalizeDateCells(wb: XLSX.WorkBook) {
+  const p = (n: number) => String(n).padStart(2, "0");
+  for (const sn of wb.SheetNames) {
+    const ws = wb.Sheets[sn];
+    for (const addr in ws) {
+      if (addr[0] === "!") continue;
+      const cell = (ws as any)[addr];
+      if (cell && cell.t === "d" && cell.v instanceof Date) {
+        const d: Date = cell.v;
+        cell.v = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+        cell.t = "s";
+        delete cell.w; delete cell.z;
+      }
+    }
+  }
+}
 
 export function SheetImport({ entity, onDone, onResult, testid = "sheet" }: { entity: SheetEntity; onDone?: () => void; onResult?: (r: { label: string; msg: string; errors: string[] }) => void; testid?: string }) {
   const [open, setOpen] = useState(false);
@@ -67,14 +86,16 @@ export function SheetImport({ entity, onDone, onResult, testid = "sheet" }: { en
   async function upload(file: File) {
     setBusy(true); setMsg("처리 중…"); setErrors([]);
     try {
-      const wb = XLSX.read(await file.arrayBuffer());
+      const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+      normalizeDateCells(wb);   // 엑셀 날짜 셀 → ISO 문자열(서버 date 검증 통과)
       const ds = await defs();
       const multi = ds.length > 1;
-      // upsert 준비
       let byKey: Record<string, any> = {};
-      if (entity.matchKey && entity.list) {
+      // upsert 매칭 키 — 복합(matchKeyFn) 우선, 없으면 단일(matchKey).
+      const keyOf = entity.matchKeyFn ? entity.matchKeyFn : (entity.matchKey ? (x: any) => x[entity.matchKey!] : null);
+      if (keyOf && entity.list) {
         const existing = (await api.get<any[]>(entity.list)).data;
-        byKey = Object.fromEntries(existing.map((x) => [x[entity.matchKey!], x]));
+        byKey = Object.fromEntries(existing.map((x) => [String(keyOf(x)), x]));
       }
       const mapRow = entity.resolver ? await entity.resolver() : null;
       let added = 0, updated = 0; const errs: string[] = [];
@@ -98,9 +119,13 @@ export function SheetImport({ entity, onDone, onResult, testid = "sheet" }: { en
           if (d.transform) rec = d.transform(rec);
           if (mapRow) { const m = mapRow(rec); if (m == null) { errs.push(`[${d.name}] ${r}행: 참조(예: 과제 관리코드)를 찾을 수 없음`); continue; } rec = m; }
           try {
-            const ex = entity.matchKey ? byKey[rec[entity.matchKey]] : null;
+            const recKey = keyOf ? String(keyOf(rec)) : "";
+            const ex = keyOf ? byKey[recKey] : null;
             if (ex && entity.patchBase) { await api.patch(`${entity.patchBase}${ex.id}`, rec); updated++; }   // 매칭키 포함 전송(ProjectIn.code 등 필수 필드 보존)
-            else { await api.post(entity.create, { ...rec, ...(d.createDefaults || entity.createDefaults || {}) }); added++; }
+            else {
+              const cr = await api.post(entity.create, { ...rec, ...(d.createDefaults || entity.createDefaults || {}) }); added++;
+              if (keyOf && cr?.data?.id) byKey[recKey] = cr.data;   // 같은 파일 내 중복 방지
+            }
           } catch (e) { errs.push(`[${d.name}] ${r}행(${rec[req[0]] || ""}): ${apiError(e)}`); }
         }
       }

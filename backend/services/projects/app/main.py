@@ -22,11 +22,12 @@ from .routers import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    # 멱등 마이그레이션: tasks 작성자(by_id) 컬럼 보강
+    # 멱등 마이그레이션: tasks 작성자(by_id)·실제 마감일(done_date) 컬럼 보강
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS by_id VARCHAR(32) DEFAULT ''"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_date DATE"))
     rename_columns(engine, [
-        ("publications", "sub", "index_type"),   # 모호한 sub → 색인 종류(SCI/KCI…)
+        ("publications", "sub", "index_type"),
     ])
     yield
 

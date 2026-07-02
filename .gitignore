@@ -20,3 +20,6 @@ frontend/dist/
 # DB 백업/덤프
 /data/*.sql
 /data/*.dump
+
+# 테스트용 업로드 양식(소스 아님)
+/*.xlsx

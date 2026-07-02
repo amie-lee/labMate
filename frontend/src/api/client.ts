@@ -29,7 +29,7 @@ api.interceptors.request.use((cfg: InternalAxiosRequestConfig) => {
   return cfg;
 });
 
-// access 만료(401) 시 refresh 로 한 번 자동 재발급
+// 401 시 refresh 1회 자동 재발급
 let refreshing: Promise<string> | null = null;
 api.interceptors.response.use(
   (r) => r,
@@ -64,6 +64,15 @@ api.interceptors.response.use(
 );
 
 export function apiError(e: unknown): string {
-  const ax = e as AxiosError<{ detail?: string }>;
-  return ax.response?.data?.detail || ax.message || "요청 처리 중 오류가 발생했습니다";
+  const ax = e as AxiosError<{ detail?: any }>;
+  const d = ax.response?.data?.detail;
+  if (Array.isArray(d)) {
+    // pydantic 422 검증오류: [{loc,msg,...}] → 읽기 쉬운 문구로
+    return d.map((x: any) => {
+      const f = Array.isArray(x?.loc) ? x.loc.filter((p: any) => p !== "body").join(".") : "";
+      return (f ? `${f}: ` : "") + (x?.msg || "");
+    }).join("; ") || "입력값 검증 오류";
+  }
+  if (d && typeof d === "object") return JSON.stringify(d);
+  return d || ax.message || "요청 처리 중 오류가 발생했습니다";
 }

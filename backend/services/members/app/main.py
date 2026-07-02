@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from labmate_common.db import Base, engine
-from labmate_common.migrate import rename_columns
+from labmate_common.migrate import rename_columns, add_columns
 
 from . import models  # noqa: F401  (모델 등록)
 from labmate_common.audit import make_audit_router
@@ -18,13 +18,18 @@ from .routers import router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 개발 편의: 테이블 자동 생성. 운영 마이그레이션은 Alembic 사용(docs §5).
+    # 개발 편의: 테이블 자동 생성(운영은 Alembic)
     Base.metadata.create_all(bind=engine)
+    add_columns(engine, [
+        ("users", "infra_manager", "BOOLEAN DEFAULT FALSE"),   # 인프라 관리 위임
+        ("users", "master_start", "DATE"),                     # 석사과정 입학일
+        ("users", "phd_start", "DATE"),                        # 박사과정 입학일
+    ])
     rename_columns(engine, [
-        ("users", "student_no", "researcher_no"),   # 학번 오인 → 과기인번호 명확화
-        ("users", "account", "bank_account"),        # 계정 오인 → 계좌
-        ("users", "joined", "join_date"),            # 동사형 → _date 일관
-        ("users", "rank", "position"),               # 직위(예약어 rank) → position
+        ("users", "student_no", "researcher_no"),
+        ("users", "account", "bank_account"),
+        ("users", "joined", "join_date"),
+        ("users", "rank", "position"),
     ])
     from .seed import ensure_admin                     # 첫 배포 자동 관리자 시드(.env)
     ensure_admin()

@@ -29,6 +29,7 @@ class PostIn(BaseModel):
     body: str = ""
     link: str = ""
     files: list[dict] = Field(default_factory=list)
+    min_role: str = ""   # 공개 범위(최소 직급): ''=전체 / under·master·phd·prof 이상만 열람
 
 
 class PostOut(PostIn):

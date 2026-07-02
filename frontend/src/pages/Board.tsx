@@ -7,7 +7,10 @@ import { RichText, stripHtml } from "../ui/RichText";
 import { useConfig } from "../api/config";
 
 interface TFile { name: string; url: string; }
-interface Post { id: string; cat: string; title: string; body: string; link: string; by_id: string; views: number; comments: any[]; files?: TFile[]; created_at?: string; }
+interface Post { id: string; cat: string; title: string; body: string; link: string; by_id: string; views: number; comments: any[]; files?: TFile[]; created_at?: string; min_role?: string; }
+// 공개 범위(최소 직급 이상만 열람). ''=전체 공개.
+const MIN_ROLE_OPTS: [string, string][] = [["", "전체 공개"], ["master", "석사과정 이상"], ["phd", "박사과정 이상"]];
+const minRoleLabel = (v?: string) => (MIN_ROLE_OPTS.find(([k]) => k === (v || ""))?.[1]) || "전체 공개";
 const CATS_FB = ["정보공유", "논문리뷰", "자유게시판"];
 const CBADGE: Record<string, string> = { "정보공유": "s-info", "논문리뷰": "s-pur", "자유게시판": "s-mute" };
 
@@ -28,7 +31,7 @@ export default function Board() {
   const [err, setErr] = useState("");
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState("");
-  const [form, setForm] = useState({ cat: "정보공유", title: "", link: "", files: [] as TFile[] });
+  const [form, setForm] = useState({ cat: "정보공유", title: "", link: "", min_role: "", files: [] as TFile[] });
   const bodyRef = useRef<HTMLDivElement>(null);
 
   async function load() {
@@ -36,13 +39,13 @@ export default function Board() {
   }
   useEffect(() => { load(); }, []);
 
-  function openForm() { setEditId(""); setAdding((v) => !v); setForm({ cat: "정보공유", title: "", link: "", files: [] }); setTimeout(() => { if (bodyRef.current) bodyRef.current.innerHTML = ""; }, 0); }
+  function openForm() { setEditId(""); setAdding((v) => !v); setForm({ cat: "정보공유", title: "", link: "", min_role: "", files: [] }); setTimeout(() => { if (bodyRef.current) bodyRef.current.innerHTML = ""; }, 0); }
   function editPost(p: Post) {
-    setForm({ cat: p.cat, title: p.title, link: p.link || "", files: p.files || [] });
+    setForm({ cat: p.cat, title: p.title, link: p.link || "", min_role: p.min_role || "", files: p.files || [] });
     setEditId(p.id); setAdding(true); setOpen(null);
     setTimeout(() => { if (bodyRef.current) bodyRef.current.innerHTML = p.body || ""; }, 0);
   }
-  function closeForm() { setAdding(false); setEditId(""); setForm({ cat: "정보공유", title: "", link: "", files: [] }); }
+  function closeForm() { setAdding(false); setEditId(""); setForm({ cat: "정보공유", title: "", link: "", min_role: "", files: [] }); }
   async function uploadFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const fl = e.target.files; if (!fl || !fl.length) return;
     const fd = new FormData(); Array.from(fl).forEach((f) => fd.append("files", f));
@@ -118,6 +121,7 @@ export default function Board() {
         <Card>
           <table className="metatbl"><tbody>
             <tr><th>분류</th><td><span className={"badge " + (CBADGE[open.cat] || "s-mute")}>{open.cat}</span></td></tr>
+            {open.min_role ? <tr><th>공개 범위</th><td><span className="badge s-wait">🔒 {minRoleLabel(open.min_role)}</span></td></tr> : null}
             <tr><th>조회</th><td>{open.views}</td></tr>
             {open.link && <tr><th>링크</th><td><a className="lnk" href={open.link} target="_blank" rel="noreferrer">🔗 {open.link}</a></td></tr>}
           </tbody></table>
@@ -187,8 +191,9 @@ export default function Board() {
         <form className="card" onSubmit={add} data-testid="board-form">
           <div className="card-h"><b>{editId ? "게시물 수정" : "글쓰기"}</b></div>
           <div className="bd grid3">
+            <div style={{ gridColumn: "1 / -1" }}><label>제목</label><input data-testid="b-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div><label>분류</label><select data-testid="b-cat" value={form.cat} onChange={(e) => setForm({ ...form, cat: e.target.value })}>{CATS.map((c) => <option key={c}>{c}</option>)}</select></div>
-            <div style={{ gridColumn: "span 2" }}><label>제목</label><input data-testid="b-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
+            <div><label>공개 범위</label><select data-testid="b-minrole" value={form.min_role} onChange={(e) => setForm({ ...form, min_role: e.target.value })}>{MIN_ROLE_OPTS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
             <div style={{ gridColumn: "1 / -1" }}><label>본문</label><RichText innerRef={bodyRef} testid="b-body" placeholder="본문을 입력하세요" /></div>
             <div style={{ gridColumn: "1 / -1" }}><label>링크(선택)</label><input data-testid="b-link" value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} /></div>
             <div style={{ gridColumn: "1 / -1" }}>
@@ -226,7 +231,7 @@ export default function Board() {
             {filtered.map((p) => (
               <tr key={p.id}>
                 <td><span className={"badge " + (CBADGE[p.cat] || "s-mute")}>{p.cat}</span></td>
-                <td><a style={{ cursor: "pointer", fontWeight: 600 }} data-testid={`post-open-${p.id}`} onClick={() => openPost(p)}>{p.title}</a><div className="muted small">{stripHtml(p.body)}</div></td>
+                <td><a style={{ cursor: "pointer", fontWeight: 600 }} data-testid={`post-open-${p.id}`} onClick={() => openPost(p)}>{p.title}</a>{p.min_role ? <span className="badge s-wait" style={{ marginLeft: 6 }} title={minRoleLabel(p.min_role)}>🔒 {minRoleLabel(p.min_role)}</span> : null}<div className="muted small">{stripHtml(p.body)}</div></td>
                 <td className="small muted">{uname(p.by_id)}</td>
                 <td className="small muted">{p.created_at ? p.created_at.slice(0, 10) : "—"}</td>
                 <td>{p.comments?.length || 0}</td><td>{p.views}</td>

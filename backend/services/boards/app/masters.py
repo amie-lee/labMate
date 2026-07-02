@@ -11,7 +11,7 @@ DEFAULTS: dict[str, Any] = {
         {"name": "일반보고", "prefix": "RPT"},
         {"name": "사유서", "prefix": "SOR"},
     ],
-    # 결재 문서양식 — 유형명 → 기안 본문 템플릿(HTML). 기안 작성 시 유형 선택하면 본문에 자동 채움.
+    # 결재 문서양식: 유형명 → 기안 본문 템플릿(HTML)
     "approval_templates": {
         "주간보고": "<h3>주간 업무 보고</h3><ul><li>금주 추진 업무</li><ul><li>업무내용 (진행상황)</li><ul><li>설명</li></ul></ul><li>차주 계획</li><ul><li>업무내용 (목표일정)</li><ul><li>설명</li></ul></ul></ul>",
         "월간보고": "<h3>월간 업무 보고</h3><ul><li>주요 업무 추진 실적</li><ul><li>업무내용 (목표 / 실적 / 달성률)</li><ul><li>설명</li></ul></ul><li>미달성 업무 및 사유</li><ul><li>업무내용</li><ul><li>미달성 사유</li><li>향후 조치 계획</li></ul></ul><li>다음 달 계획</li><ul><li>업무내용 (목표일정)<br></li><ul><li>설명</li></ul></ul></ul>",

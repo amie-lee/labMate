@@ -40,6 +40,8 @@ class ProfileFields(BaseModel):
     birth: date | None = None
     gender: str = ""
     join_date: date | None = None  # 입실(입사)일
+    master_start: date | None = None   # 석사과정 입학일
+    phd_start: date | None = None      # 박사과정 입학일
     degree: str = ""            # 최종학위
     major: str = ""             # 전공
     grad_year: str = ""         # 학위취득년도
@@ -72,6 +74,7 @@ class UserOut(ProfileFields):
     name: str
     role: str
     delegated_admin: bool = False
+    infra_manager: bool = False
     must_change_password: bool = False
     active: bool = True
     last_login_at: datetime | None = None
@@ -80,7 +83,7 @@ class UserOut(ProfileFields):
 
 
 class UserCreate(ProfileFields):
-    """관리자가 사용자 추가(가입 없음). 임시 비밀번호로 생성되고 강제 변경 플래그가 켜진다."""
+    """관리자가 사용자 추가(가입 없음, 임시 비밀번호 + 강제 변경)."""
     email: EmailStr
     name: str
     role: str
@@ -98,6 +101,8 @@ class UserUpdate(BaseModel):
     birth: date | None = None
     gender: str | None = None
     join_date: date | None = None
+    master_start: date | None = None
+    phd_start: date | None = None
     degree: str | None = None
     major: str | None = None
     grad_year: str | None = None
@@ -107,6 +112,7 @@ class UserUpdate(BaseModel):
     exit_date: date | None = None
     note: str | None = None
     delegated_admin: bool | None = None
+    infra_manager: bool | None = None
     active: bool | None = None
     temp_password: str | None = None   # 입력 시 비밀번호 초기화(must_change 강제)
 

@@ -1,5 +1,4 @@
-// 브라우저 confirm/alert/prompt 대체용 자체 디자인 팝업.
-// 사용: const ok = await confirmDialog("삭제할까요?"); / await alertDialog("..."); / const v = await promptDialog("이름?", "");
+// 브라우저 confirm/alert/prompt 대체용 자체 디자인 팝업
 import { useEffect, useState } from "react";
 
 type Kind = "confirm" | "alert" | "prompt";

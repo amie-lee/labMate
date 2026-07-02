@@ -8,6 +8,16 @@ const ROLE_FROM_KO: Record<string, string> = {
   prof: "prof", phd: "phd", master: "master", under: "under", staff: "staff", admin: "admin",
 };
 
+// 날짜 정규화 — 연도만("2024")/연월("2024-05")도 유효한 date로 보정. 빈값/'-'는 null.
+function normDate(v: any): string | null {
+  const s = String(v ?? "").trim();
+  if (!s || /^[-–—]+$/.test(s)) return null;
+  if (/^\d{4}$/.test(s)) return `${s}-01-01`;
+  const mm = s.match(/^(\d{4})-(\d{1,2})$/);
+  if (mm) return `${mm[1]}-${mm[2].padStart(2, "0")}-01`;
+  return s;
+}
+
 // ── 실적: 종류 → 입력 양식 계열, 종류별 탭(시트) 정의 ──
 function pubFamily(k: string): "논문" | "학술대회" | "특허" | "기타" {
   if (/특허/.test(k)) return "특허";
@@ -19,7 +29,7 @@ function pubTab(kind: string): SheetDef {
   const fam = pubFamily(kind);
   const intl = /국제|국외|해외/.test(kind);
   const scope = intl ? "국외" : "국내";
-  const base = (r: any, meta: any) => ({ kind, title: r.title, scope, index_type: kind, authors: r.authors || "", funding: r.funding || "", pub_date: r.pub_date || null, status: "게재완료", meta, files: [] });
+  const base = (r: any, meta: any) => ({ kind, title: r.title, scope, index_type: kind, authors: r.authors || "", funding: r.funding || "", pub_date: normDate(r.pub_date), status: "게재완료", meta, files: [] });
   if (fam === "논문") return {
     name: kind, required: ["title"],
     cols: [["title", "논문제목"], ["journal", "학술지명"], ["vol", "게재권/집"], ["no", "게재호"], ["pages", "페이지"], ["pub_date", "게재일"], ["publisher", "발행처"], ["country", "발행국가"], ["doi", "DOI"], ["issn", "ISSN"], ["lang", "논문언어"], ["first_authors", "제1저자수"], ["corr_authors", "교신저자수"], ["total_authors", "전체저자수"], ["authors", "저자(소속)"], ["funding", "사사(과제 관리코드)"]],
@@ -70,11 +80,11 @@ export const SHEETS: Record<string, SheetEntity> = {
         const out: any = { code: r.code, name: r.name, agency: r.agency || "", program: r.program || "", category: "과제", meta };
         if (r.start) out.start = r.start;
         if (r.end) out.end = r.end;
-        if (prof) out.lead_id = prof.id;                                          // 책임자(PI)=지도교수 자동(폼과 동일)
+        if (prof) out.lead_id = prof.id;                                          // 책임자(PI)=지도교수 자동
         const pm = umap[String(r.pm || "").trim()];
-        if (pm) out.pm_id = pm.id;                                                // 실무 담당자
+        if (pm) out.pm_id = pm.id;
         const mem = String(r.members || "").split(/[,;]/).map((s) => umap[s.trim()]?.id).filter(Boolean);
-        if (mem.length) out.members = mem;                                        // 참여 연구원
+        if (mem.length) out.members = mem;
         return out;
       };
     },
@@ -127,7 +137,8 @@ export const SHEETS: Record<string, SheetEntity> = {
   // 실적 — 종류별 탭(시트). 종류는 마스터데이터(pub_types)에서 동적으로 가져온다.
   // 사사(funding)가 기존 연구과제(관리코드)와 연결될 때만 등록(단, '기타' 계열은 과제 연결 없이도 허용).
   publications: {
-    label: "실적", create: "/projects/publications", required: ["title"],
+    // 제목(title) 기준 upsert(중복 생성 방지)
+    label: "실적", create: "/projects/publications", list: "/projects/publications", patchBase: "/projects/publications/", matchKey: "title", required: ["title"],
     buildTabs: async () => {
       let kinds: string[] = [];
       try { kinds = (await api.get<any>("/projects/config")).data?.pub_types || []; } catch { /* */ }
@@ -137,11 +148,15 @@ export const SHEETS: Record<string, SheetEntity> = {
     resolver: async () => {
       const grants = (await api.get<any[]>("/projects/projects?kind=grant")).data;
       const map = Object.fromEntries(grants.map((g) => [g.code, g.id]));
-      // 사사 = 연구과제 관리코드. 기존 과제와 연결될 때만 통과. 단 '기타' 계열은 과제 없이도 허용.
+      // 사사 = 연구과제 관리코드. 관대하게 처리: 없음/미등록/다중 코드 모두 업로드 허용.
       return (r: any) => {
-        if (pubFamily(r.kind) === "기타") return r;
-        const pid = map[r.funding]; if (!pid) return null;
-        return { ...r, project_id: pid };
+        const raw = String(r.funding || "").trim();
+        const funding = (!raw || /^[-–—]+$/.test(raw)) ? "" : raw;   // '-'·빈값 = 사사 없음(모든 계열 공통)
+        if (pubFamily(r.kind) === "기타") return { ...r, funding };
+        if (!funding) return { ...r, funding: "" };
+        // 다중 사사(쉼표/세미콜론) 중 등록된 과제만 연결, 미등록 코드는 문구만 유지
+        const pid = funding.split(/[,;]/).map((s) => map[s.trim()]).find(Boolean);
+        return pid ? { ...r, project_id: pid, funding } : { ...r, funding };
       };
     },
   },
@@ -163,7 +178,9 @@ export const SHEETS: Record<string, SheetEntity> = {
     },
   },
   devices: {
-    label: "인프라 장비", create: "/resource/devices", required: ["rack", "name"],
+    // 랙+위치(시작 U) 복합 키 upsert(중복/겹침 방지)
+    label: "인프라 장비", create: "/resource/devices", list: "/resource/devices", patchBase: "/resource/devices/",
+    matchKeyFn: (r) => `${String(r.rack || "").trim()}#${r.pos}`, required: ["rack", "name"],
     cols: [["rack", "랙"], ["type", "종류"], ["name", "장비명"], ["ip", "IP주소"], ["pos", "위치(시작 U)"], ["size", "크기(U)"], ["note", "비고"]],
     example: ["R1", "서버", "OO 노드 1", "192.168.0.10", "1", "2", "보증 만료 2026-12"],
     intFields: ["pos", "size"],

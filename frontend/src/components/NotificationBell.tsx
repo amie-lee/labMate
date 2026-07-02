@@ -1,5 +1,4 @@
-// 인앱 알림 센터 — 처리 대기 항목을 주기적으로 모아 종(bell)에 표시하고,
-// 새 항목이 생기면 브라우저 데스크톱 알림(push)으로 띄운다. (이메일 없음)
+// 인앱 알림 센터 — 처리 대기 항목을 주기적으로 종(bell)에 표시, 새 항목은 브라우저 데스크톱 알림
 import { useEffect, useRef, useState } from "react";
 import { todayKST } from "../lib/date";
 import { useNavigate } from "react-router-dom";

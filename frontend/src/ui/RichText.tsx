@@ -40,7 +40,7 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
   const [link, setLink] = useState({ url: "https://", text: "" });
   const [tbl, setTbl] = useState({ rows: 3, cols: 3 });
 
-  // 포커스를 가져가는 컨트롤(pt 입력·색상)용: 에디터 선택을 저장/복원
+  // pt 입력·색상 컨트롤로 포커스 이동 시 에디터 선택 저장/복원
   function saveSel() { const s = window.getSelection(); if (s && s.rangeCount && innerRef.current?.contains(s.getRangeAt(0).commonAncestorContainer)) savedRange.current = s.getRangeAt(0).cloneRange(); }
   function restoreSel() { innerRef.current?.focus(); const r = savedRange.current; if (!r) return; const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r); }
 
@@ -68,7 +68,7 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
       const r = await api.post<{ name: string; url: string }[]>("/projects/uploads", fd, { headers: { "Content-Type": "multipart/form-data" } });
       const url = r.data?.[0]?.url;
       if (url) { ensureCaret(); document.execCommand("insertHTML", false, `<img src="${fileUrl(url)}" alt="${file.name}" style="max-width:100%;border-radius:8px;margin:6px 0;" /><br/>`); }
-    } catch { /* 무시 */ }
+    } catch { }
   }
   async function handleFiles(files: File[]) { const imgs = files.filter((f) => f.type.startsWith("image/")); for (const f of imgs) await insertImage(f); }
   function onDrop(e: React.DragEvent<HTMLDivElement>) {

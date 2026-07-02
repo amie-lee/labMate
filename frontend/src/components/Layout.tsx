@@ -10,7 +10,7 @@ const ROLE_LABEL: Record<string, string> = {
   prof: "지도교수", phd: "박사과정", master: "석사과정", under: "학사과정", staff: "행정", admin: "관리자",
 };
 
-// 역할 기반 메뉴 노출(요구사항 §2.3 권한 매트릭스). 행정 권한 위임자는 staff 권한을 추가로 가짐.
+// 역할 기반 메뉴 노출. 행정 위임자는 staff 권한 추가 보유.
 // 관리자(admin)는 대시보드·구성원·환경설정만 사용 — ALL 에서 admin 제외.
 const ALL = ["prof", "phd", "master", "under", "staff"];
 const EVERYONE = [...ALL, "admin"];
@@ -64,8 +64,15 @@ export default function Layout({ children }: { children: ReactNode }) {
   const brandLogo = useConfig<string>("brand_logo", "");
   const labName = useConfig<string>("lab_name", "");
   const [drawer, setDrawer] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("lm_sidebar_collapsed") === "1");   // 데스크탑 사이드바 접기
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 사이드 메뉴 토글 — 모바일은 드로어, 데스크탑은 접기/펼치기
+  function toggleSidebar() {
+    if (window.innerWidth <= 860) setDrawer((v) => !v);
+    else setCollapsed((v) => { localStorage.setItem("lm_sidebar_collapsed", v ? "0" : "1"); return !v; });
+  }
 
   // 라우트 이동 시 모바일 드로어 닫기
   useEffect(() => { setDrawer(false); setMenu(false); }, [loc.pathname]);
@@ -87,11 +94,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={"appshell" + (drawer ? " drawer-open" : "")}>
-      {/* 전역 상단 앱바 */}
+    <div className={"appshell" + (drawer ? " drawer-open" : "") + (collapsed ? " sidebar-collapsed" : "")}>
       <header className="appbar">
         <div className="appbar-l">
-          <button className="hamburger" data-testid="hamburger" aria-label="메뉴" onClick={() => setDrawer((v) => !v)}>☰</button>
+          <button className="hamburger" data-testid="hamburger" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기" onClick={toggleSidebar}>☰</button>
           <span className="appbar-brand">
             {brandLogo ? <img className="brand-logo" src={fileUrl(brandLogo)} alt="로고" /> : <><span className="brand-badge">L</span>LabMate</>}
             <span className="appbar-tag">{labName || "연구실 그룹웨어"}</span>

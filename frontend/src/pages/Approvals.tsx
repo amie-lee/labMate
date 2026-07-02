@@ -5,10 +5,20 @@ import { useAuth } from "../auth/AuthContext";
 import { useConfig, names } from "../api/config";
 import { RichText } from "../ui/RichText";
 import { printDoc } from "../ui/pdf";
+import { todayKST } from "../lib/date";
 
 interface Step { uid: string; decision: string | null; at: string; comment?: string; }
 interface Appr { id: string; doc_no: string; type: string; title: string; by_id: string; project_id: string; content: string; steps: Step[]; status: string; source_ref?: string; }
-interface Project { id: string; code: string; name: string; kind: string; }
+interface Project { id: string; code: string; name: string; kind: string; start?: string | null; end?: string | null; meta?: Record<string, any>; lead_id?: string; pm_id?: string; members?: string[]; }
+// 진행 중 여부 — 연구과제는 해당 연도 기간(미입력 시 총 기간), 프로젝트는 총 기간 기준.
+function isOngoing(p: Project): boolean {
+  const t = todayKST();
+  const m = p.meta || {};
+  const [s, e] = (p.kind === "grant" && (m.year_start || m.year_end)) ? [m.year_start || "", m.year_end || ""] : [p.start || "", p.end || ""];
+  if (s && t < s) return false;   // 예정
+  if (e && t > e) return false;   // 완료
+  return true;                    // 진행 중
+}
 
 const SBADGE: Record<string, string> = { "임시저장": "s-wait", "진행": "s-info", "승인": "s-ok", "반려": "s-bad", "회수": "s-mute" };
 // 금액·산출내역은 본문 양식에 포함(별도 필드 없음), 예산 차감은 연구비집행에서 처리
@@ -52,6 +62,9 @@ export default function Approvals() {
   const ROLE_KO: Record<string, string> = { prof: "교수", staff: "행정", admin: "관리", phd: "박사과정", master: "석사과정", under: "학사과정" };
   const urole = (id: string) => { const r = users.find((u) => u.id === id)?.role; return ROLE_KO[r] || r; };
   const projName = (id: string) => projects.find((p) => p.id === id)?.name || "-";
+  // 기안 대상: 본인 PI·담당·참여 진행 중 과제(편집 중 기존 선택 유지)
+  const mineProj = (p: Project) => !!me && (p.lead_id === me.id || p.pm_id === me.id || (p.members || []).includes(me.id));
+  const selectableProj = (p: Project) => (isOngoing(p) && mineProj(p)) || p.id === form.project_id;
 
   async function load() {
     try {
@@ -171,8 +184,8 @@ export default function Approvals() {
               <div><label>문서유형</label><select data-testid="a-type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
               <div><label>관련 프로젝트</label><select data-testid="a-project" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
                 <option value="">(없음)</option>
-                <optgroup label="연구과제">{projects.filter((p) => p.kind === "grant").map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>
-                <optgroup label="프로젝트">{projects.filter((p) => p.kind === "activity").map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>
+                <optgroup label="연구과제">{projects.filter((p) => p.kind === "grant" && selectableProj(p)).map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>
+                <optgroup label="프로젝트">{projects.filter((p) => p.kind === "activity" && selectableProj(p)).map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>
               </select></div>
             </div>
             <label>제목</label><input data-testid="a-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
@@ -242,9 +255,9 @@ export default function Approvals() {
                 const iAmPending = a.steps.some((s) => s.uid === me?.id && !s.decision);
                 return (
                   <tr key={a.id}>
-                    <td>{a.doc_no}</td><td>{a.type}</td>
-                    <td><a className="lnk" onClick={() => setViewing(a)}>{a.title}</a></td>
-                    <td className="muted small">{lineSummary(a)}</td>
+                    <td>{a.doc_no}</td><td style={{ maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }} title={a.type}>{a.type}</td>
+                    <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={a.title}><a className="lnk" onClick={() => setViewing(a)}>{a.title}</a></td>
+                    <td className="muted small" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={lineSummary(a)}>{lineSummary(a)}</td>
                     <td><span className={"badge " + (SBADGE[a.status] || "s-mute")}>{a.status}</span></td>
                     <td>{a.status === "진행" && iAmPending ? (myTurn ? (<>
                       <button className="btn ghost sm" data-testid={`a-approve-${a.id}`} onClick={() => decide(a, "승인")}>승인</button>{" "}
@@ -268,8 +281,8 @@ export default function Approvals() {
               const started = a.steps.some((s) => s.decision);
               return (
                 <tr key={a.id}>
-                  <td>{a.doc_no}</td><td>{a.type}</td><td>{a.title}</td>
-                  <td className="muted small">{lineSummary(a)}</td>
+                  <td>{a.doc_no}</td><td style={{ maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }} title={a.type}>{a.type}</td><td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={a.title}>{a.title}</td>
+                  <td className="muted small" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={lineSummary(a)}>{lineSummary(a)}</td>
                   <td><span className={"badge " + (SBADGE[a.status] || "s-mute")}>{a.status}</span></td>
                   <td>
                     <button className="btn ghost sm" data-testid={`a-view-${a.id}`} onClick={() => setViewing(a)}>문서</button>{" "}

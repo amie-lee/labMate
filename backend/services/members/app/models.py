@@ -41,6 +41,8 @@ class User(OrgScoped, SoftDelete, Base):
     birth: Mapped[date_t | None] = mapped_column(Date, nullable=True)
     gender: Mapped[str] = mapped_column(String(10), default="")
     join_date: Mapped[date_t | None] = mapped_column(Date, nullable=True)   # 입실(입사)일
+    master_start: Mapped[date_t | None] = mapped_column(Date, nullable=True)  # 석사과정 입학일
+    phd_start: Mapped[date_t | None] = mapped_column(Date, nullable=True)     # 박사과정 입학일
     degree: Mapped[str] = mapped_column(String(40), default="")          # 최종학위
     major: Mapped[str] = mapped_column(String(80), default="")           # 전공
     grad_year: Mapped[str] = mapped_column(String(10), default="")       # 학위취득년도
@@ -55,6 +57,7 @@ class User(OrgScoped, SoftDelete, Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     # 행정 권한 위임(랩장 등) — staff 권한 일부를 위임받음
     delegated_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    infra_manager: Mapped[bool] = mapped_column(Boolean, default=False)   # 인프라(자산·장비) 관리 위임
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

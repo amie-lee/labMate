@@ -34,11 +34,11 @@ export function Badge({ kind, children }: { kind?: string; children: ReactNode }
 
 export const won = (n: number) => (n || 0).toLocaleString() + "원";
 
-// 과제/프로젝트 진행 상태 배지 색 — 전 화면 동일 규칙(진행 중=녹색·예정=대기·완료=회색)
+// 진행 상태 배지 색 규칙(진행 중=녹색·예정=대기·완료=회색)
 const STATUS_BADGE: Record<string, string> = { "진행 중": "s-ok", "진행": "s-ok", "예정": "s-wait", "완료": "s-mute" };
 export const statusClass = (s: string) => "badge " + (STATUS_BADGE[s] || "s-info");
 
-// 공용 필터 칩 — 상태/분류 등 적은 선택지의 필터를 일관된 칩 UI로 통일(선택 시 채움 + 선택적 카운트)
+// 공용 필터 칩(선택 시 채움 + 선택적 카운트)
 export function Chips({ value, onChange, items, testid }: {
   value: string; onChange: (v: string) => void;
   items: { key: string; label?: string; count?: number }[]; testid?: string;

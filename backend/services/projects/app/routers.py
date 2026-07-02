@@ -43,8 +43,8 @@ def _can_edit_project(user: CurrentUser, p: Project) -> bool:
 
 
 def _is_work_admin(user: CurrentUser) -> bool:
-    """세부업무 관리자급 — 교수·행정·위임."""
-    return user.role in ("prof", "staff") or bool(user.delegated_admin)
+    """세부업무 관리자급 — 교수·행정·위임·시스템관리자(일괄 데이터 관리)."""
+    return user.role in ("prof", "staff", "admin") or bool(user.delegated_admin)
 
 
 def _can_add_task(user: CurrentUser, p: Project) -> bool:
@@ -78,7 +78,7 @@ def create_project(body: schemas.ProjectIn, user: CurrentUser = Depends(get_curr
     if body.kind == "grant" and not _can_manage_project(user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "연구과제 생성 권한이 없습니다 (교수·위임 연구원만)")
     p = Project(**body.model_dump())
-    # 활동 프로젝트: 작성자가 책임자·담당자·참여자가 아니면 참여자로 자동 포함(생성자 가시성 보장)
+    # 활동 프로젝트: 생성자를 참여자로 자동 포함(가시성 보장)
     if p.kind == "activity" and user.id not in (p.lead_id, p.pm_id) and user.id not in (p.members or []):
         p.members = list(p.members or []) + [user.id]
     db.add(p)
@@ -102,7 +102,7 @@ def update_project(pid: str, body: schemas.ProjectIn, user: CurrentUser = Depend
         raise HTTPException(404, "과제 없음")
     if not _can_edit_pj(user, p):
         raise HTTPException(403, "수정 권한이 없습니다")
-    for k, v in body.model_dump(exclude_unset=True).items():       # 보낸 필드만 갱신(시트 갱신 시 미입력 책임자·담당자·참여자 보존)
+    for k, v in body.model_dump(exclude_unset=True).items():       # 보낸 필드만 갱신(미입력 필드 보존)
         setattr(p, k, v)
     db.commit()
     db.refresh(p)

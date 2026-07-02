@@ -18,14 +18,24 @@ from .models import Approval, Event, Meeting, Notice, Post
 
 router = APIRouter()
 MANAGER = ("prof", "staff")
-APPROVER = ("prof", "staff")   # 결재 권한
 
-# KST(UTC+9) 기준일 — 컨테이너 TZ와 무관하게 한국 날짜로 기록
+# KST(UTC+9) 기준 날짜
 KST = timezone(timedelta(hours=9))
 
 
 def _is_manager(u: CurrentUser) -> bool:
     return u.role in MANAGER or u.delegated_admin
+
+
+# 게시판 공개 범위(직급 이상): 학사<석사<박사<교수, 관리자 전체
+ROLE_RANK = {"under": 1, "master": 2, "phd": 3, "prof": 4, "staff": 0, "admin": 5}
+VALID_MIN_ROLE = ("", "under", "master", "phd", "prof")
+
+
+def _can_see_post(user: CurrentUser, p: Post) -> bool:
+    if not p.min_role or p.by_id == user.id:
+        return True
+    return ROLE_RANK.get(user.role, 0) >= ROLE_RANK.get(p.min_role, 0)
 
 
 def _kst_now() -> datetime:
@@ -53,7 +63,7 @@ def list_notices(user: CurrentUser = Depends(get_current_user), db: Session = De
     rows = list(db.scalars(select(Notice).order_by(Notice.required.desc(), Notice.created_at.desc())))
     if _is_manager(user):             # 교수·행정·위임은 전체
         return rows
-    uid = user.id                     # 그 외는 전체 공지(대상 미지정) 또는 본인이 대상/작성자
+    uid = user.id                     # 그 외는 대상 미지정 공지 또는 본인 대상/작성
     return [n for n in rows if not (n.target_user_ids or []) or uid in (n.target_user_ids or []) or n.by_id == uid]
 
 
@@ -94,7 +104,7 @@ def ack_notice(nid: str, user: CurrentUser = Depends(get_current_user), db: Sess
     n = db.get(Notice, nid)
     if not n:
         raise HTTPException(404, "공지 없음")
-    # 토글: 확인 → 다시 누르면 미확인
+    # 확인 토글
     if user.id in n.acked_user_ids:
         n.acked_user_ids = [x for x in n.acked_user_ids if x != user.id]
     else:
@@ -105,15 +115,17 @@ def ack_notice(nid: str, user: CurrentUser = Depends(get_current_user), db: Sess
 
 # ── 게시판 ──
 @router.get("/posts", response_model=list[schemas.PostOut])
-def list_posts(cat: str | None = None, _: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_posts(cat: str | None = None, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     q = select(Post).order_by(Post.created_at.desc())
     if cat:
         q = q.where(Post.cat == cat)
-    return list(db.scalars(q))
+    return [p for p in db.scalars(q) if _can_see_post(user, p)]   # 공개 범위(직급) 필터
 
 
 @router.post("/posts", response_model=schemas.PostOut, status_code=201)
 def create_post(body: schemas.PostIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if body.min_role not in VALID_MIN_ROLE:
+        raise HTTPException(400, "유효하지 않은 공개 범위")
     p = Post(by_id=user.id, **body.model_dump())   # 누구나 작성
     db.add(p); db.commit(); db.refresh(p)
     return p
@@ -126,6 +138,8 @@ def update_post(pid: str, body: schemas.PostIn, user: CurrentUser = Depends(get_
         raise HTTPException(404, "글 없음")
     if p.by_id != user.id and user.role not in ("prof", "admin"):
         raise HTTPException(403, "수정 권한이 없습니다")
+    if body.min_role not in VALID_MIN_ROLE:
+        raise HTTPException(400, "유효하지 않은 공개 범위")
     for k, v in body.model_dump().items():
         setattr(p, k, v)
     db.commit(); db.refresh(p)
@@ -133,10 +147,12 @@ def update_post(pid: str, body: schemas.PostIn, user: CurrentUser = Depends(get_
 
 
 @router.get("/posts/{pid}", response_model=schemas.PostOut)
-def get_post(pid: str, _: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_post(pid: str, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     p = db.get(Post, pid)
     if not p:
         raise HTTPException(404, "글 없음")
+    if not _can_see_post(user, p):
+        raise HTTPException(403, "이 글을 볼 권한이 없습니다")
     p.views += 1
     db.commit(); db.refresh(p)
     return p
@@ -198,7 +214,7 @@ def delete_post(pid: str, user: CurrentUser = Depends(get_current_user), db: Ses
         raise HTTPException(403, "삭제 권한이 없습니다")
 
 
-# ── 회의록 (작성: PI·위임·관리자) ──
+# ── 회의록 ──
 def _action_id() -> str:
     import uuid
     return uuid.uuid4().hex[:8]
@@ -229,7 +245,7 @@ def list_meetings(user: CurrentUser = Depends(get_current_user), db: Session = D
 
 @router.post("/meetings", response_model=schemas.MeetingOut, status_code=201)
 def create_meeting(body: schemas.MeetingIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    # 회의록은 누구나 작성 가능(그룹미팅 기록). 수정·삭제는 작성자/관리자만.
+    # 누구나 작성, 수정·삭제는 작성자·관리자
     data = body.model_dump()
     data["actions"] = _normalize_actions(data.get("actions", []))
     m = Meeting(by_id=user.id, **data)
@@ -338,7 +354,7 @@ def list_events(expand: bool = True, user: CurrentUser = Depends(get_current_use
 
 @router.post("/events", response_model=schemas.EventOut, status_code=201)
 def create_event(body: schemas.EventIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    # 전체/구성원 공유 일정도 전원 등록 가능
+    # 전원 등록 가능
     e = Event(by_id=user.id, **body.model_dump())
     db.add(e); db.commit(); db.refresh(e)
     return e

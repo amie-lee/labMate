@@ -21,6 +21,7 @@ class CurrentUser:
     role: str
     name: str
     delegated_admin: bool = False
+    infra_manager: bool = False
     org: str = "lab1"
 
 
@@ -33,7 +34,7 @@ def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "유효하지 않은 토큰입니다")
     if claims.get("type") != "access":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access 토큰이 필요합니다")
-    return CurrentUser(id=claims["sub"], role=claims.get("role", ""), name=claims.get("name", ""), delegated_admin=bool(claims.get("delegated_admin", False)), org=claims.get("org", "lab1"))
+    return CurrentUser(id=claims["sub"], role=claims.get("role", ""), name=claims.get("name", ""), delegated_admin=bool(claims.get("delegated_admin", False)), infra_manager=bool(claims.get("infra_manager", False)), org=claims.get("org", "lab1"))
 
 
 def require_roles(*roles: str):

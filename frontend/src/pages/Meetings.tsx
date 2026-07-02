@@ -8,6 +8,15 @@ import { RichText } from "../ui/RichText";
 
 interface Action { id?: string; title: string; assignee_id: string; due: string; done: boolean; task_id?: string; }
 interface Meeting { id: string; date: string; title: string; by_id: string; decisions: string; actions: Action[]; attendees: string[]; project_id?: string; }
+// 진행 중 판정 — 연구과제=해당 연도 기간(폴백 총기간), 프로젝트=총기간
+function ongoing(p: any, isGrant: boolean): boolean {
+  const t = todayKST();
+  const m = p.meta || {};
+  const [s, e] = (isGrant && (m.year_start || m.year_end)) ? [m.year_start || "", m.year_end || ""] : [p.start || "", p.end || ""];
+  if (s && t < s) return false;   // 예정
+  if (e && t > e) return false;   // 완료
+  return true;                    // 진행 중
+}
 
 export default function Meetings() {
   const { me } = useAuth();
@@ -32,6 +41,10 @@ export default function Meetings() {
   const projName = (id?: string) => { const p = [...grants, ...activities].find((x) => x.id === id); return p ? `${p.code} · ${p.name}` : ""; };
   const projCode = (id?: string) => [...grants, ...activities].find((x) => x.id === id)?.code || "";
   const shown = items.filter((m) => !q.trim() || `${m.title} ${m.decisions || ""} ${projCode(m.project_id)} ${uname(m.by_id)}`.toLowerCase().includes(q.trim().toLowerCase()));
+  // 관련 프로젝트 후보 — 본인 참여+진행 중(기존 선택은 유지)
+  const mineProj = (p: any) => !!me && (p.lead_id === me.id || p.pm_id === me.id || (p.members || []).includes(me.id));
+  const ongoingGrants = grants.filter((p) => (ongoing(p, true) && mineProj(p)) || p.id === form.project_id);
+  const ongoingActs = activities.filter((p) => (ongoing(p, false) && mineProj(p)) || p.id === form.project_id);
   async function load() {
     try {
       setItems((await api.get<Meeting[]>("/boards/meetings")).data);
@@ -97,14 +110,14 @@ export default function Meetings() {
             <div><label>관련 프로젝트 <span className="muted small">(선택 시 액션아이템이 세부 업무로 등록)</span></label>
               <select data-testid="mt-project" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })} style={{ margin: 0 }}>
                 <option value="">(없음 — 회의록에서 직접 체크)</option>
-                {grants.length > 0 && <optgroup label="연구과제">{grants.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>}
-                {activities.length > 0 && <optgroup label="프로젝트">{activities.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>}
+                {ongoingGrants.length > 0 && <optgroup label="연구과제">{ongoingGrants.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>}
+                {ongoingActs.length > 0 && <optgroup label="프로젝트">{ongoingActs.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</optgroup>}
               </select>
             </div>
           </div>
           <label>참석자</label>
           <div className="fchips" data-testid="mt-attendees" style={{ marginBottom: 10 }}>
-            {users.filter((u) => u.role !== "admin").map((u) => <button type="button" key={u.id} className={"chip" + (form.attendees.includes(u.id) ? " on" : "")} onClick={() => toggleAttendee(u.id)}>{u.name}</button>)}
+            {users.filter((u) => u.role !== "admin" && u.active !== false).map((u) => <button type="button" key={u.id} className={"chip" + (form.attendees.includes(u.id) ? " on" : "")} onClick={() => toggleAttendee(u.id)}>{u.name}</button>)}
           </div>
           <label>결정사항</label>
           <RichText innerRef={decRef} testid="mt-decisions" placeholder="회의 결정사항을 입력하세요" minHeight={120} />
@@ -115,7 +128,7 @@ export default function Meetings() {
             <div key={i} data-testid={`mt-action-${i}`} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
               <input placeholder="할 일" value={a.title} onChange={(e) => setAction(i, { title: e.target.value })} style={{ flex: 1, margin: 0, minWidth: 0 }} />
               <select value={a.assignee_id} onChange={(e) => setAction(i, { assignee_id: e.target.value })} style={{ flex: "0 0 130px", margin: 0, minWidth: 0 }}>
-                <option value="">담당자</option>{users.filter((u) => u.role !== "admin").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                <option value="">담당자</option>{users.filter((u) => u.role !== "admin" && u.active !== false).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
               <input type="date" value={a.due} onChange={(e) => setAction(i, { due: e.target.value })} style={{ flex: "0 0 150px", margin: 0 }} />
               <button type="button" className="btn ghost sm" onClick={() => delAction(i)}>✕</button>

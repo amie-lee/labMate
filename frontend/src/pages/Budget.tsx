@@ -7,7 +7,7 @@ import { useConfig, names } from "../api/config";
 
 
 interface Budget { id: string; project_id: string; category: string; allocated: number; spent: number; }
-interface Project { id: string; code: string; name: string; agency: string; category: string; status: string; start: string | null; end: string | null; }
+interface Project { id: string; code: string; name: string; agency: string; category: string; status: string; start: string | null; end: string | null; meta?: Record<string, any>; }
 const STD_FB = ["인건비", "학생인건비", "장비비", "재료비", "연구활동비", "연구수당", "간접비"];
 const FILTERS = ["진행 중", "예정", "완료", "전체"];
 function autoStatus(start: string | null, end: string | null): string {
@@ -15,6 +15,12 @@ function autoStatus(start: string | null, end: string | null): string {
   if (start && today < start) return "예정";
   if (end && today > end) return "완료";
   return "진행 중";
+}
+// 연구과제 상태는 해당 연도 기간 기준(미입력 시 총 과제기간)
+function grantAutoStatus(p: Project): string {
+  const m = p.meta || {};
+  if (m.year_start || m.year_end) return autoStatus(m.year_start || "", m.year_end || "");
+  return autoStatus(p.start, p.end);
 }
 
 export default function BudgetPage() {
@@ -41,16 +47,18 @@ export default function BudgetPage() {
         if (need.length) { for (const p of need) await api.post(`/funds/budgets/ensure/${p.id}`); bg = (await api.get<Budget[]>("/funds/budgets")).data; }
       }
       setBudgets(bg);
-      setSel((s) => s || pr.filter((p) => autoStatus(p.start, p.end) === "진행 중")[0]?.id || pr[0]?.id || "");
+      setSel((s) => s || pr.filter((p) => grantAutoStatus(p) === "진행 중")[0]?.id || pr[0]?.id || "");
     } catch (e) { setErr(apiError(e)); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
-  const stat = (p: Project) => autoStatus(p.start, p.end);
+  const stat = (p: Project) => grantAutoStatus(p);
   const visProjects = projects.filter((p) => filter === "전체" || stat(p) === filter);
   const proj = projects.find((p) => p.id === sel);
   const rowsOf = (pid: string) => budgets.filter((b) => b.project_id === pid);
-  const totOf = (pid: string) => rowsOf(pid).reduce((a, b) => ({ allocated: a.allocated + b.allocated, spent: a.spent + b.spent }), { allocated: 0, spent: 0 });
+  // 간접비는 편성액 전액을 집행으로 간주
+  const spentOf = (b: { category: string; allocated: number; spent: number }) => (b.category === "간접비" ? b.allocated : b.spent);
+  const totOf = (pid: string) => rowsOf(pid).reduce((a, b) => ({ allocated: a.allocated + b.allocated, spent: a.spent + spentOf(b) }), { allocated: 0, spent: 0 });
   const pctOf = (a: number, s: number) => (a ? Math.round((s / a) * 100) : 0);
   const allocOf = (pid: string, category: string) => rowsOf(pid).find((b) => b.category === category) || { id: "", allocated: 0, spent: 0 };
 
@@ -87,7 +95,7 @@ export default function BudgetPage() {
           <tbody>
             {visProjects.map((p) => { const t = totOf(p.id); const r = pctOf(t.allocated, t.spent); const st = stat(p); return (
               <tr key={p.id} data-testid={`bg-row-${p.code}`} onClick={() => { setSel(p.id); setEditing(false); }} style={{ cursor: "pointer", background: sel === p.id ? "var(--bsoft)" : undefined }}>
-                <td><b>{p.code}</b></td><td className="muted">{p.name}</td>
+                <td><b>{p.code}</b></td><td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }} title={p.name}>{p.name}</td>
                 <td><span className={statusClass(st)}>{st}</span></td>
                 <td>{won(t.allocated)}</td><td>{won(t.spent)}</td>
                 <td style={{ color: t.allocated - t.spent < 0 ? "var(--bad)" : "inherit" }}>{won(t.allocated - t.spent)}</td>
@@ -109,22 +117,22 @@ export default function BudgetPage() {
             <thead><tr><th>비목</th><th style={{ width: 180 }}>편성</th><th>집행</th><th>잔액</th><th style={{ width: 120 }}>집행률</th></tr></thead>
             <tbody>
               {STD.map((c) => {
-                const b = allocOf(sel, c); const a = editing ? (allocated[c] || 0) : b.allocated; const r = pctOf(a, b.spent);
+                const b = allocOf(sel, c); const a = editing ? (allocated[c] || 0) : b.allocated; const sp = c === "간접비" ? a : b.spent; const r = pctOf(a, sp);
                 return (
                   <tr key={c}>
-                    <td><b>{c}</b></td>
+                    <td><b>{c}</b>{c === "간접비" && <span className="muted small"> (집행 간주)</span>}</td>
                     <td>{editing
                       ? <input data-testid={`bg-allocated-${c}`} inputMode="numeric" value={allocated[c] ? allocated[c].toLocaleString() : ""} onChange={(e) => setAlloc({ ...allocated, [c]: Number(e.target.value.replace(/[^0-9]/g, "")) })} placeholder="0" style={{ margin: 0, width: 150 }} />
                       : won(a)}</td>
-                    <td>{won(b.spent)}</td>
-                    <td style={{ color: a - b.spent < 0 ? "var(--bad)" : "inherit" }}>{won(a - b.spent)}</td>
+                    <td>{won(sp)}</td>
+                    <td style={{ color: a - sp < 0 ? "var(--bad)" : "inherit" }}>{won(a - sp)}</td>
                     <td><div className="bar" style={{ width: 70, display: "inline-block", verticalAlign: "middle" }}><i style={{ width: `${Math.min(r, 100)}%`, background: r > 90 ? "var(--bad)" : "var(--brand)" }} /></div> {r}%</td>
                   </tr>
                 );
               })}
               {(() => {
                 const ta = STD.reduce((a, c) => a + (editing ? (allocated[c] || 0) : allocOf(sel, c).allocated), 0);
-                const ts = STD.reduce((a, c) => a + allocOf(sel, c).spent, 0);
+                const ts = STD.reduce((a, c) => a + (c === "간접비" ? (editing ? (allocated[c] || 0) : allocOf(sel, c).allocated) : allocOf(sel, c).spent), 0);
                 return <tr style={{ fontWeight: 700, background: "var(--soft)" }}><td>합계</td><td>{won(ta)}</td><td>{won(ts)}</td><td>{won(ta - ts)}</td><td>{pctOf(ta, ts)}%</td></tr>;
               })()}
             </tbody>

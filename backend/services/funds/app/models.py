@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Integer, String, Text, func
+from sqlalchemy import JSON, Date, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from labmate_common.db import Base
@@ -61,7 +61,7 @@ class Participation(OrgScoped, SoftDelete, Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     uid: Mapped[str] = mapped_column(String(32), index=True)
     project_id: Mapped[str] = mapped_column(String(32))
-    rate_pct: Mapped[int] = mapped_column(Integer, default=0)
+    rate_pct: Mapped[float] = mapped_column(Float, default=0)   # 참여율(%) — 소수 허용
     month: Mapped[str] = mapped_column(String(7), index=True)   # YYYY-MM
 
 

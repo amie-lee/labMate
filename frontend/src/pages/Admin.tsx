@@ -24,7 +24,7 @@ function perm(role: string, mod: string): "rw" | "r" | "-" {
     case "전자결재": case "프로젝트": case "자원예약": case "게시판": case "회의록": case "교육":
       return role === "staff" ? "-" : "rw";                                   // 행정 차단(위임 학생은 본인 역할로 접근)
     case "실적": case "자산": case "인프라": return manage ? "rw" : "r";       // 관리=교수·행정, 학생 전원 조회
-    default: return "rw";                                                     // 대시보드/캘린더/프로젝트/공지/게시판/회의록/자원예약/근태/자료실
+    default: return "rw";
   }
 }
 const ROLES = [["prof", "지도교수"], ["phd", "박사과정"], ["master", "석사과정"], ["under", "학사과정"], ["staff", "행정"], ["admin", "관리자"]];
@@ -127,7 +127,7 @@ function ObjArrayEditor({ value, onChange }: { value: any[]; onChange: (v: any[]
   );
 }
 
-// 결재 문서유형(이름·접두) + 유형별 문서양식(RichText)을 한 화면에서 편집
+// 결재 문서유형·양식 편집
 function ApprovalEditor() {
   const [types, setTypes] = useState<any[]>([]);
   const tpls = useRef<Record<number, string>>({});

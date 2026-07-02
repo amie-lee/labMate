@@ -38,6 +38,7 @@ class Post(OrgScoped, SoftDelete, Base):
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(400), default="")
+    min_role: Mapped[str] = mapped_column(String(20), default="")  # 공개 범위(최소 직급): ''=전체, under/master/phd/prof 이상
     by_id: Mapped[str] = mapped_column(String(32))
     views: Mapped[int] = mapped_column(default=0)
     comments: Mapped[list] = mapped_column(JSON, default=list)        # [{by,at,text}]

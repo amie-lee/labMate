@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from labmate_common.db import Base, engine
-from labmate_common.migrate import rename_columns, rename_json_list_keys
+from labmate_common.migrate import rename_columns, rename_json_list_keys, add_columns
 
 from . import models  # noqa: F401
 from labmate_common.configstore import make_config_router
@@ -21,13 +21,16 @@ from .routers import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    add_columns(engine, [
+        ("posts", "min_role", "VARCHAR(20) DEFAULT ''"),   # 게시판 공개 범위(직급 이상 접근 제어)
+    ])
     rename_columns(engine, [
-        ("approvals", "doc", "content"),                 # 본문(doc_no와 혼동 방지)
-        ("approvals", "line", "steps"),                  # 결재선
-        ("approvals", "ref", "source_ref"),              # 외부 연결
-        ("approvals", "category", "deduct_account"),     # 차감 비목
-        ("notices", "acks", "acked_user_ids"),           # 확인자
-        ("notices", "targets", "target_user_ids"),       # 대상자
+        ("approvals", "doc", "content"),
+        ("approvals", "line", "steps"),
+        ("approvals", "ref", "source_ref"),
+        ("approvals", "category", "deduct_account"),
+        ("notices", "acks", "acked_user_ids"),
+        ("notices", "targets", "target_user_ids"),
     ])
     rename_json_list_keys(engine, "meetings", "actions", {"task": "title", "who": "assignee_id"})
     yield

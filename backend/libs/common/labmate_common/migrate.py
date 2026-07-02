@@ -1,8 +1,4 @@
-"""경량 컬럼 리네이밍 마이그레이션 — create_all 후 lifespan에서 호출.
-
-create_all 은 기존 테이블 컬럼을 변경하지 못하므로, 코드상 컬럼명을 바꿀 때
-이미 생성된 테이블의 컬럼을 idempotent 하게 RENAME 한다.
-"""
+"""경량 컬럼 마이그레이션 — create_all이 못 바꾸는 기존 테이블 컬럼을 멱등 RENAME/ADD."""
 from __future__ import annotations
 
 from sqlalchemy import text
@@ -25,12 +21,15 @@ def rename_columns(engine: Engine, renames: list[tuple[str, str, str]]) -> None:
             """))
 
 
-def rename_json_list_keys(engine: Engine, table: str, json_col: str, key_map: dict[str, str]) -> None:
-    """table.json_col(=리스트[dict])의 각 원소 딕셔너리 키를 key_map대로 변경(멱등).
+def add_columns(engine: Engine, cols: list[tuple[str, str, str]]) -> None:
+    """cols: [(table, column, coldef), ...]. 없을 때만 ADD COLUMN(멱등). 예: ('posts','min_role',"VARCHAR(20) DEFAULT ''")."""
+    with engine.begin() as conn:
+        for table, column, coldef in cols:
+            conn.execute(text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "{column}" {coldef};'))
 
-    예: 회의록 actions=[{task,who,...}] → [{title,assignee_id,...}].
-    이미 새 키가 있는 원소는 건드리지 않는다.
-    """
+
+def rename_json_list_keys(engine: Engine, table: str, json_col: str, key_map: dict[str, str]) -> None:
+    """table.json_col(리스트[dict])의 각 원소 키를 key_map대로 변경(멱등)."""
     import json as _json
     with engine.begin() as conn:
         rows = conn.execute(text(f"SELECT id, {json_col} FROM {table}")).fetchall()

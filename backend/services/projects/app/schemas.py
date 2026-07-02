@@ -34,6 +34,7 @@ class TaskIn(BaseModel):
     status: str = "예정"
     start: date | None = None
     due: date | None = None
+    done_date: date | None = None   # 실제 마감일(완료 처리일)
     body: str = ""
     link: str = ""
     files: list[dict] = Field(default_factory=list)

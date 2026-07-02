@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 DEFAULTS: dict[str, Any] = {
-    # 비목(name) + 세목(subs). 예산 표준 7비목 — 예산·인건비·연구비집행 공용.
+    # 비목(name)+세목(subs). 예산 표준 7비목
     "budget_types": [
         {"name": "인건비", "subs": []},
         {"name": "학생인건비", "subs": []},

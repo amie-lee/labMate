@@ -5,16 +5,16 @@ import { useAuth } from "../auth/AuthContext";
 
 interface User {
   id: string; email: string; name: string; role: string; position: string; grade: string;
-  name_en: string; birth: string | null; gender: string; join_date: string | null; exit_date: string | null;
+  name_en: string; birth: string | null; gender: string; join_date: string | null; exit_date: string | null; master_start: string | null; phd_start: string | null;
   phone: string; dept: string; student_id: string; researcher_no: string; degree: string; major: string; grad_year: string;
   bank_account: string; note: string;
-  delegated_admin: boolean; must_change_password: boolean; active: boolean;
+  delegated_admin: boolean; infra_manager: boolean; must_change_password: boolean; active: boolean;
 }
 const ROLES = ["prof", "phd", "master", "under", "staff", "admin"];
 const ROLE_KO: Record<string, string> = { prof: "지도교수", phd: "박사과정", master: "석사과정", under: "학사과정", staff: "행정", admin: "관리자" };
 const EMPTY = {
   email: "", name: "", role: "under", position: "", grade: "", name_en: "", birth: "", gender: "",
-  join_date: "", exit_date: "", phone: "", dept: "", student_id: "", researcher_no: "", degree: "", major: "", grad_year: "", bank_account: "", note: "",
+  join_date: "", exit_date: "", master_start: "", phd_start: "", phone: "", dept: "", student_id: "", researcher_no: "", degree: "", major: "", grad_year: "", bank_account: "", note: "",
   temp_password: "labmate123",
 };
 
@@ -23,7 +23,11 @@ export default function Members() {
   // 위임 학생 권한상승 방지 — 교수/관리자 계정·위임·역할 변경 차단
   const isRealAdmin = !!me && (["prof", "staff", "admin"].includes(me.role) || !!me.delegated_admin);   // 위임 학생도 구성원 전체 관리 가능
   const canActOn = (u: User) => canManageUsers && u.id !== me?.id && (isRealAdmin || !["prof", "staff", "admin"].includes(u.role));
+  // 비활성 조회는 지도교수·관리자만 — 그 외엔 상태 필터 숨김
+  const canSeeInactive = !!me && (me.role === "prof" || me.role === "admin");
   const [users, setUsers] = useState<User[]>([]);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");   // 기본: 활성 구성원만 표시
   const [err, setErr] = useState("");
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState("");
@@ -41,7 +45,7 @@ export default function Members() {
   function editUser(u: User) {
     setForm({
       email: u.email, name: u.name, role: u.role, position: u.position || "", grade: u.grade || "",
-      name_en: u.name_en || "", birth: u.birth || "", gender: u.gender || "", join_date: u.join_date || "", exit_date: u.exit_date || "",
+      name_en: u.name_en || "", birth: u.birth || "", gender: u.gender || "", join_date: u.join_date || "", exit_date: u.exit_date || "", master_start: u.master_start || "", phd_start: u.phd_start || "",
       phone: u.phone || "", dept: u.dept || "", student_id: u.student_id || "", researcher_no: u.researcher_no || "",
       degree: u.degree || "", major: u.major || "", grad_year: u.grad_year || "", bank_account: u.bank_account || "", note: u.note || "",
       temp_password: "",
@@ -53,7 +57,7 @@ export default function Members() {
   async function saveUser(e: React.FormEvent) {
     e.preventDefault(); setErr("");
     const payload: any = { ...form };
-    for (const k of ["birth", "join_date", "exit_date"]) if (!payload[k]) delete payload[k];
+    for (const k of ["birth", "join_date", "exit_date", "master_start", "phd_start"]) if (!payload[k]) delete payload[k];
     try {
       if (editId) {
         if (!payload.temp_password) delete payload.temp_password;   // 빈칸이면 비밀번호 유지
@@ -68,14 +72,24 @@ export default function Members() {
   async function toggleDelegate(u: User) {
     try { await api.patch(`/members/users/${u.id}`, { delegated_admin: !u.delegated_admin }); load(); } catch (e) { setErr(apiError(e)); }
   }
+  async function toggleInfra(u: User) {
+    try { await api.patch(`/members/users/${u.id}`, { infra_manager: !u.infra_manager }); load(); } catch (e) { setErr(apiError(e)); }
+  }
   async function toggleActive(u: User) {
     if (u.active && !await confirmDialog(`${u.name} 계정을 비활성화(오프보딩)할까요?`)) return;
     try { await api.patch(`/members/users/${u.id}`, { active: !u.active }); load(); } catch (e) { setErr(apiError(e)); }
   }
-  async function delUser(u: User) {
-    if (!await confirmDialog(`${u.name}(${u.email}) 구성원을 완전히 삭제할까요? 되돌릴 수 없습니다.`, { danger: true })) return;
-    try { await api.delete(`/members/users/${u.id}`); load(); } catch (e) { setErr(apiError(e)); }
+  async function delUser(u: User): Promise<boolean> {
+    if (!await confirmDialog(`${u.name}(${u.email}) 구성원을 완전히 삭제할까요? 되돌릴 수 없습니다.`, { danger: true })) return false;
+    try { await api.delete(`/members/users/${u.id}`); load(); return true; } catch (e) { setErr(apiError(e)); return false; }
   }
+
+  // 검색·상태 필터(클라이언트) — admin 계정은 목록에서 숨김
+  const q = query.trim().toLowerCase();
+  const visible = users
+    .filter((u) => u.role !== "admin")
+    .filter((u) => (statusFilter === "all" ? true : statusFilter === "active" ? u.active : !u.active))
+    .filter((u) => !q || [u.name, u.name_en, u.email, u.dept, u.student_id, u.major, u.phone].some((f) => (f || "").toLowerCase().includes(q)));
 
   return (
     <div data-testid="page-members">
@@ -84,6 +98,18 @@ export default function Members() {
         {canManageUsers && <button className="btn primary" data-testid="member-add-open" onClick={() => (adding ? closeForm() : openNew())}>+ 구성원 추가</button>}
       </div>
       {err && <div className="form-err" data-testid="member-error">{err}</div>}
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "nowrap", marginBottom: 10 }}>
+        <input data-testid="member-search" placeholder="이름·이메일·학번·학과·전공 검색" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: "1 1 auto", minWidth: 0 }} />
+        {canSeeInactive && (
+          <select data-testid="member-status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={{ flex: "0 0 auto", width: 120 }}>
+            <option value="all">전체</option>
+            <option value="active">활성</option>
+            <option value="inactive">비활성</option>
+          </select>
+        )}
+        <span className="muted small" data-testid="member-count" style={{ flex: "0 0 auto", whiteSpace: "nowrap" }}>{visible.length}명</span>
+      </div>
 
       {adding && (
         <form className="card" onSubmit={saveUser} data-testid="member-form" style={{ marginBottom: 12 }}>
@@ -100,6 +126,8 @@ export default function Members() {
             <div><label>임시 비밀번호{editId && <span className="muted small"> (입력 시 초기화)</span>}</label><input data-testid="m-temp" value={form.temp_password} placeholder={editId ? "변경 시에만 입력" : ""} onChange={(e) => up("temp_password", e.target.value)} /></div>
             <div><label>입실(입사)일</label><input type="date" value={form.join_date} onChange={(e) => up("join_date", e.target.value)} /></div>
             <div><label>퇴실(퇴사)일 <span className="muted small">(비활성화 시 자동 기록)</span></label><input type="date" value={form.exit_date} onChange={(e) => up("exit_date", e.target.value)} /></div>
+            <div><label>석사과정 입학일 <span className="muted small">(인건비 단가 적용)</span></label><input type="date" data-testid="m-master-start" value={form.master_start} onChange={(e) => up("master_start", e.target.value)} /></div>
+            <div><label>박사과정 입학일 <span className="muted small">(인건비 단가 적용)</span></label><input type="date" data-testid="m-phd-start" value={form.phd_start} onChange={(e) => up("phd_start", e.target.value)} /></div>
             <div className="fsec">소속</div>
             <div><label>학과</label><input data-testid="m-dept" value={form.dept} onChange={(e) => up("dept", e.target.value)} /></div>
             <div><label>학번</label><input data-testid="m-stid" value={form.student_id} onChange={(e) => up("student_id", e.target.value)} /></div>
@@ -111,31 +139,34 @@ export default function Members() {
             <div><label>학위취득년도</label><input value={form.grad_year} onChange={(e) => up("grad_year", e.target.value)} placeholder="예: 2023" /></div>
             <div style={{ gridColumn: "1 / -1" }}><label>비고</label><input value={form.note} onChange={(e) => up("note", e.target.value)} /></div>
           </div>
-          <div className="bd" style={{ borderTop: "1px solid var(--line2)", display: "flex", gap: 8 }}>
+          <div className="bd" style={{ borderTop: "1px solid var(--line2)", display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn primary" data-testid="member-add-submit">{editId ? "저장" : "추가 (첫 로그인 시 비밀번호 변경 강제)"}</button>
             <button type="button" className="btn ghost" onClick={closeForm}>취소</button>
+            {editId && <button type="button" data-testid="member-del" onClick={async () => { const u = users.find((x) => x.id === editId); if (u && await delUser(u)) closeForm(); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--bad)", fontSize: 11.5, textDecoration: "underline", cursor: "pointer", opacity: 0.85 }}>삭제</button>}
           </div>
         </form>
       )}
 
       <div className="card scroll">
         <table className="tbl" data-testid="member-table">
-          <thead><tr><th>이름</th><th>직급</th><th>전공</th><th>최종학위</th><th>이메일</th><th>상태</th>{canManageUsers && <th>관리</th>}</tr></thead>
+          <thead><tr><th>이름</th><th>직급</th><th>이메일</th><th>과학기술인번호</th><th>최종학위</th><th>전공</th><th>상태</th>{canManageUsers && <th>관리</th>}</tr></thead>
           <tbody>
-            {users.filter((u) => u.role !== "admin").map((u) => (
+            {visible.length === 0 && <tr><td colSpan={canManageUsers ? 8 : 7} className="muted" style={{ textAlign: "center", padding: 16 }}>표시할 구성원이 없습니다.</td></tr>}
+            {visible.map((u) => (
               <tr key={u.id}>
-                <td><a className="lnk" style={{ fontWeight: 700 }} data-testid={`member-open-${u.email}`} onClick={() => setDetail(u)}>{u.name}</a>{u.delegated_admin ? <span className="badge s-pur" style={{ marginLeft: 6 }}>행정위임</span> : ""}</td>
+                <td><a className="lnk" style={{ fontWeight: 700 }} data-testid={`member-open-${u.email}`} onClick={() => setDetail(u)}>{u.name}</a>{u.delegated_admin ? <span className="badge s-pur" style={{ marginLeft: 6 }}>행정위임</span> : ""}{u.infra_manager ? <span className="badge s-info" style={{ marginLeft: 6 }}>인프라담당</span> : ""}</td>
                 <td>{ROLE_KO[u.role] || u.role}</td>
-                <td className="muted">{u.major || "—"}</td>
-                <td className="muted">{u.degree || "—"}</td>
                 <td className="muted">{u.email}</td>
+                <td className="muted">{u.researcher_no || "—"}</td>
+                <td className="muted">{u.degree || "—"}</td>
+                <td className="muted">{u.major || "—"}</td>
                 <td><span className={"badge " + (!u.active ? "s-mute" : u.must_change_password ? "s-wait" : "s-ok")}>{!u.active ? "비활성" : u.must_change_password ? "비번변경 필요" : "정상"}</span></td>
                 {canManageUsers && (
                   <td>
-                    {canActOn(u) && <button className="btn ghost sm" data-testid={`m-edit-${u.email}`} onClick={() => editUser(u)}>수정</button>}{" "}
-                    {isRealAdmin && !["prof", "staff", "admin"].includes(u.role) && <button className="btn ghost sm" data-testid={`m-delegate-${u.email}`} onClick={() => toggleDelegate(u)}>{u.delegated_admin ? "위임해제" : "행정위임"}</button>}{" "}
-                    {canActOn(u) && <button className="btn ghost sm" data-testid={`m-active-${u.email}`} onClick={() => toggleActive(u)}>{u.active ? "비활성화" : "활성화"}</button>}{" "}
-                    {canActOn(u) && <button className="btn ghost sm" data-testid={`m-del-${u.email}`} style={{ color: "var(--bad)" }} onClick={() => delUser(u)}>삭제</button>}
+                    {canActOn(u) && u.active && <button className="btn ghost sm" data-testid={`m-edit-${u.email}`} onClick={() => editUser(u)}>수정</button>}{" "}
+                    {isRealAdmin && u.active && !["prof", "staff", "admin"].includes(u.role) && <button className="btn ghost sm" data-testid={`m-delegate-${u.email}`} onClick={() => toggleDelegate(u)}>{u.delegated_admin ? "위임해제" : "행정위임"}</button>}{" "}
+                    {isRealAdmin && u.active && !["prof", "staff", "admin"].includes(u.role) && <button className="btn ghost sm" data-testid={`m-infra-${u.email}`} onClick={() => toggleInfra(u)}>{u.infra_manager ? "인프라해제" : "인프라담당"}</button>}{" "}
+                    {canActOn(u) && <button className="btn ghost sm" data-testid={`m-active-${u.email}`} onClick={() => toggleActive(u)}>{u.active ? "비활성화" : "활성화"}</button>}
                     {!canActOn(u) && <span className="muted small">—</span>}
                   </td>
                 )}
@@ -154,6 +185,7 @@ export default function Members() {
                 {[
                   ["영문이름", detail.name_en], ["성별", detail.gender], ["생년월일", detail.birth], ["휴대폰", detail.phone],
                   ["이메일", detail.email], ["입실(입사)일", detail.join_date], ["퇴실(퇴사)일", detail.exit_date],
+                  ["석사과정 입학일", detail.master_start], ["박사과정 입학일", detail.phd_start],
                   ["학과", detail.dept], ["학번", detail.student_id], ["과학기술인번호", detail.researcher_no],
                   ["최종학위", detail.degree], ["전공", detail.major], ["학위취득년도", detail.grad_year],
                   ["비고", detail.note],

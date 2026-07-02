@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import text
+
 from labmate_common.db import Base, engine
 from labmate_common.migrate import rename_columns
 
@@ -22,14 +24,17 @@ from .routers import router
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     rename_columns(engine, [
-        ("budgets", "cat", "category"),                    # 비목 약어 → category
-        ("budgets", "alloc", "allocated"),                 # 편성액 약어 → allocated
+        ("budgets", "cat", "category"),
+        ("budgets", "alloc", "allocated"),
         ("budget_logs", "cat", "category"),
         ("expenses", "cat", "category"),
-        ("expenses", "use", "subcategory"),                # 세목(동사 오인) → subcategory
-        ("expenses", "ev_checked", "evidence_checked"),    # 약어 → 명확화
-        ("participations", "ratio", "rate_pct"),           # 비율/퍼센트 모호 → rate_pct
+        ("expenses", "use", "subcategory"),
+        ("expenses", "ev_checked", "evidence_checked"),
+        ("participations", "ratio", "rate_pct"),
     ])
+    # 참여율 소수 허용: rate_pct double
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE participations ALTER COLUMN rate_pct TYPE double precision"))
     yield
 
 

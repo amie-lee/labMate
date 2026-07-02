@@ -22,9 +22,9 @@ from .routers import router
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     rename_columns(engine, [
-        ("devices", "ip1", "ip"),              # 단일 IP인데 다중 암시 → ip
-        ("assets", "cls", "asset_class"),      # class 약어 → 명확화
-        ("assets", "no", "asset_no"),          # 번호/부정 혼동 → asset_no
+        ("devices", "ip1", "ip"),
+        ("assets", "cls", "asset_class"),
+        ("assets", "no", "asset_no"),
     ])
     yield
 

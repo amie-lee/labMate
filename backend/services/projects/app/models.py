@@ -49,7 +49,8 @@ class Task(OrgScoped, SoftDelete, Base):
     assignee_id: Mapped[str] = mapped_column(String(32), default="")
     status: Mapped[str] = mapped_column(String(20), default="예정")       # 예정/진행/완료
     start: Mapped[date | None] = mapped_column(Date, nullable=True)
-    due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due: Mapped[date | None] = mapped_column(Date, nullable=True)          # 마감일(계획)
+    done_date: Mapped[date | None] = mapped_column(Date, nullable=True)    # 실제 마감일(완료 처리일)
     body: Mapped[str] = mapped_column(Text, default="")
     link: Mapped[str] = mapped_column(String(400), default="")
     files: Mapped[list] = mapped_column(JSON, default=list)              # 첨부 [{name,url}]
