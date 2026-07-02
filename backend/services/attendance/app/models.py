@@ -21,10 +21,12 @@ class Attendance(OrgScoped, SoftDelete, Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     uid: Mapped[str] = mapped_column(String(32), index=True)
     date: Mapped[date_t] = mapped_column(Date, index=True)
-    check_in: Mapped[str] = mapped_column(String(5), default="")    # HH:MM
-    check_out: Mapped[str] = mapped_column(String(5), default="")
+    check_in: Mapped[str] = mapped_column(String(5), default="")    # 최초 출근 HH:MM
+    check_out: Mapped[str] = mapped_column(String(5), default="")   # 최종 퇴근 HH:MM
     status: Mapped[str] = mapped_column(String(20), default="업무 중")  # 업무 중/외근/출장/휴가/퇴근
     note: Mapped[str] = mapped_column(String(200), default="")
+    work_min: Mapped[int] = mapped_column(default=0)                # 실제 근무 분(세션별 누적, 휴게 제외)
+    session_start: Mapped[str] = mapped_column(String(5), default="")  # 현재 근무 세션 시작 HH:MM(퇴근 시 해제)
     corrected: Mapped[bool] = mapped_column(default=False)
     corrected_by: Mapped[str] = mapped_column(String(32), default="")
     corrected_at: Mapped[str] = mapped_column(String(20), default="")
@@ -32,7 +34,7 @@ class Attendance(OrgScoped, SoftDelete, Base):
 
 
 class AttLog(OrgScoped, SoftDelete, Base):
-    """근태 보정 이력 — 누가·언제·무엇을·왜 바꿨는가."""
+    """근태 보정 이력."""
     __tablename__ = "att_logs"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     att_id: Mapped[str] = mapped_column(String(32), index=True)

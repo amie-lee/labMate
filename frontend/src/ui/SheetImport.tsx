@@ -30,6 +30,8 @@ export type SheetEntity = {
   resolver?: () => Promise<(r: any) => any | null>;   // 과제코드→project_id 등 참조 해결
   tabs?: SheetDef[];                                   // 정적 다중 탭
   buildTabs?: () => Promise<SheetDef[]>;               // 동적 다중 탭(실적 종류별)
+  exportList?: string;                                 // 내보내기 데이터 조회(없으면 list 사용)
+  exportResolve?: (rows: any[]) => Promise<any[]>;     // 내보내기 행 보정(참조 필드 채우기: project_id→code 등)
 };
 
 // 시트 이름은 31자 제한
@@ -80,6 +82,33 @@ export function SheetImport({ entity, onDone, onResult, testid = "sheet" }: { en
         XLSX.utils.book_append_sheet(wb, ws, nm);
       });
       XLSX.writeFile(wb, `labmate-${entity.label}-양식.xlsx`);
+    } catch (e) { setMsg(apiError(e)); } finally { setBusy(false); }
+  }
+
+  // 현재 데이터 → 시트(XLSX). 값은 top-level 필드(없으면 meta 하위), 다중 탭은 kind로 분리
+  async function downloadData() {
+    const src = entity.exportList || entity.list;
+    if (!src) { setMsg("이 항목은 내보내기를 지원하지 않습니다."); return; }
+    setBusy(true); setMsg("내보내는 중…"); setErrors([]);
+    try {
+      let items = (await api.get<any[]>(src)).data;
+      if (entity.exportResolve) items = await entity.exportResolve(items);
+      const ds = await defs();
+      const multi = ds.length > 1;
+      const cell = (o: any, f: string) => { const v = o?.[f] ?? o?.meta?.[f]; return v == null ? "" : String(v); };
+      const wb = XLSX.utils.book_new();
+      const used = new Set<string>();
+      ds.forEach((d) => {
+        const rows = multi ? items.filter((it) => String(it.kind || "") === d.name) : items;
+        const aoa = [d.cols.map(([, ko]) => ko), ...rows.map((it) => d.cols.map(([field]) => cell(it, field)))];
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        let nm = safeName(d.name); let i = 2;
+        while (used.has(nm)) nm = safeName(d.name + i++);
+        used.add(nm);
+        XLSX.utils.book_append_sheet(wb, ws, nm);
+      });
+      XLSX.writeFile(wb, `labmate-${entity.label}-데이터.xlsx`);
+      setMsg(`내보내기 완료 — ${items.length}건`);
     } catch (e) { setMsg(apiError(e)); } finally { setBusy(false); }
   }
 
@@ -153,7 +182,8 @@ export function SheetImport({ entity, onDone, onResult, testid = "sheet" }: { en
                 <li>엑셀 파일을 선택하면 즉시 일괄 등록됩니다. {entity.matchKey ? "동일 키는 갱신(upsert)됩니다." : ""}</li>
               </ol>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <button type="button" className="btn ghost sm" data-testid={`${testid}-tpl`} disabled={busy} onClick={downloadTemplate}>⬇ 엑셀 양식(XLSX) 다운로드</button>
+                <button type="button" className="btn ghost sm" data-testid={`${testid}-tpl`} disabled={busy} onClick={downloadTemplate}>⬇ 엑셀 양식(XLSX)</button>
+                {(entity.exportList || entity.list) && <button type="button" className="btn ghost sm" data-testid={`${testid}-export`} disabled={busy} onClick={downloadData}>⬆ 현재 데이터 내보내기</button>}
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-testid={`${testid}-file`} disabled={busy}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
               </div>

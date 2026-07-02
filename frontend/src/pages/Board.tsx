@@ -112,7 +112,6 @@ export default function Board() {
   const ql = q.trim().toLowerCase();
   const filtered = items.filter((p) => (tab === "전체" || p.cat === tab) && (!ql || `${p.title} ${stripHtml(p.body || "")} ${uname(p.by_id)}`.toLowerCase().includes(ql)));
 
-  // 게시글 상세 보기
   if (open) {
     return (
       <div data-testid="page-board-view">
@@ -190,7 +189,7 @@ export default function Board() {
       {adding && (
         <form className="card" onSubmit={add} data-testid="board-form">
           <div className="card-h"><b>{editId ? "게시물 수정" : "글쓰기"}</b></div>
-          <div className="bd grid3">
+          <div className="bd grid2">
             <div style={{ gridColumn: "1 / -1" }}><label>제목</label><input data-testid="b-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div><label>분류</label><select data-testid="b-cat" value={form.cat} onChange={(e) => setForm({ ...form, cat: e.target.value })}>{CATS.map((c) => <option key={c}>{c}</option>)}</select></div>
             <div><label>공개 범위</label><select data-testid="b-minrole" value={form.min_role} onChange={(e) => setForm({ ...form, min_role: e.target.value })}>{MIN_ROLE_OPTS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>

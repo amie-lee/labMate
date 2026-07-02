@@ -95,11 +95,21 @@ def check_in(body: schemas.CheckIn, user: CurrentUser = Depends(get_current_user
     if not a:
         a = Attendance(uid=user.id, date=today)
         db.add(a)
-    a.check_in = a.check_in or _now_hm()
+    a.check_in = a.check_in or _now_hm()   # 최초 출근 시각 유지
+    a.session_start = _now_hm()             # 현재 근무 세션 시작
+    a.check_out = ""                        # 재출근 시 퇴근 시각 해제(하루 1레코드)
     a.status = body.status
     a.note = body.note
     db.commit(); db.refresh(a)
     return a
+
+
+def _minutes_between(start: str, end: str) -> int:
+    """HH:MM 두 시각의 분 차이(같은 날 기준, 음수는 0)."""
+    if not start or not end:
+        return 0
+    d = (int(end[:2]) * 60 + int(end[3:5])) - (int(start[:2]) * 60 + int(start[3:5]))
+    return d if d > 0 else 0
 
 
 @router.post("/attendance/check-out", response_model=schemas.AttendanceOut)
@@ -107,14 +117,18 @@ def check_out(user: CurrentUser = Depends(get_current_user), db: Session = Depen
     a = db.scalar(select(Attendance).where(Attendance.uid == user.id, Attendance.date == _today()))
     if not a:
         raise HTTPException(400, "출근 기록이 없습니다")
-    a.check_out = _now_hm()
+    now = _now_hm()
+    if a.session_start:                     # 현재 세션 경과분을 실근무에 누적(휴게 제외)
+        a.work_min = (a.work_min or 0) + _minutes_between(a.session_start, now)
+        a.session_start = ""
+    a.check_out = now
     a.status = "퇴근"
     db.commit(); db.refresh(a)
     return a
 
 
 def _apply_correction(db, by_id, uid, date, check_in, check_out, status, note, reason):
-    """출퇴근 보정 적용 + 변경 전/후 이력 기록. (직접 보정·정정 요청 승인 공용)"""
+    """출퇴근 보정 적용 및 전/후 이력 기록(직접 보정·정정 승인 공용)."""
     a = db.scalar(select(Attendance).where(Attendance.uid == uid, Attendance.date == date))
     before = ({"check_in": a.check_in, "check_out": a.check_out, "status": a.status, "note": a.note} if a else {})
     if not a:
@@ -125,6 +139,8 @@ def _apply_correction(db, by_id, uid, date, check_in, check_out, status, note, r
     a.check_out = check_out
     a.status = status
     a.note = note
+    a.work_min = _minutes_between(check_in, check_out)   # 보정 근무분 = 출근~퇴근 구간(단일 세션)
+    a.session_start = ""
     a.corrected = True
     a.corrected_by = by_id
     a.corrected_at = _kst_now().strftime("%Y-%m-%d %H:%M")
@@ -136,7 +152,7 @@ def _apply_correction(db, by_id, uid, date, check_in, check_out, status, note, r
 
 @router.post("/attendance/correct", response_model=schemas.AttendanceOut)
 def correct_attendance(body: schemas.CorrectionIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """근태 보정(관리자·위임·PI) — 변경 전/후를 이력으로 남긴다."""
+    """근태 보정 — 전/후 이력 기록."""
     if not _hr_admin(user):
         raise HTTPException(403, "근태 보정 권한이 없습니다")
     if not body.reason.strip():
@@ -170,7 +186,7 @@ def list_correct_requests(user: CurrentUser = Depends(get_current_user), db: Ses
 
 @router.post("/attendance/correct-requests/{rid}/decide", response_model=schemas.CorrectionReqOut)
 def decide_correct_request(rid: str, decision: str, note: str = "", user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """정정 요청 승인/반려(관리자·위임·PI). 승인 시 보정 적용."""
+    """정정 요청 승인/반려 — 승인 시 보정 적용."""
     if not _hr_admin(user):
         raise HTTPException(403, "정정 요청 처리 권한이 없습니다")
     r = db.get(CorrectionReq, rid)

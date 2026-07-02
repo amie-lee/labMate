@@ -2,7 +2,17 @@ import { useEffect, useState } from "react";
 import { api, apiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
-interface Att { id: string; uid: string; date: string; check_in: string; check_out: string; status: string; note: string; corrected?: boolean; }
+interface Att { id: string; uid: string; date: string; check_in: string; check_out: string; status: string; note: string; work_min?: number; session_start?: string; corrected?: boolean; }
+
+const nowHM = () => new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+const minsBetween = (s: string, e: string) => { if (!s || !e) return 0; const d = (+e.slice(0, 2) * 60 + +e.slice(3, 5)) - (+s.slice(0, 2) * 60 + +s.slice(3, 5)); return d > 0 ? d : 0; };
+// 근무시간 = 출근~퇴근(근무 중이면 현재까지)
+const workMin = (a: { status?: string; check_in?: string; check_out?: string }) => {
+  if (!a.check_in) return 0;
+  const end = (!a.check_out && a.status !== "퇴근") ? nowHM() : (a.check_out || "");
+  return minsBetween(a.check_in, end);
+};
+const fmtWork = (m: number) => m ? `${Math.floor(m / 60)}시간 ${m % 60}분` : "—";
 interface Log { id: string; att_id: string; target_uid: string; by_id: string; before: any; after: any; reason: string; at?: string; }
 interface Req { id: string; uid: string; date: string; check_in: string; check_out: string; requested_status: string; reason: string; status: string; decided_by: string; decided_at: string; decide_note: string; }
 
@@ -123,17 +133,18 @@ export default function AttendanceAdmin() {
           </span>
         </div>
         <table className="tbl" data-testid="aa-table">
-          <thead><tr><th>일자</th><th>구성원</th><th>상태</th><th>출근</th><th>퇴근</th><th>비고</th></tr></thead>
+          <thead><tr><th>일자</th><th>구성원</th><th>상태</th><th>출근</th><th>퇴근</th><th>근무</th><th>비고</th></tr></thead>
           <tbody>
             {shownAtts.map((a) => (
               <tr key={a.id}>
                 <td>{a.date}{a.corrected && <span className="badge s-wait" style={{ marginLeft: 6 }}>보정</span>}</td>
                 <td><b>{uname(a.uid)}</b></td>
                 <td>{a.status}</td><td>{a.check_in || "—"}</td><td>{a.check_out || "—"}</td>
+                <td className="small">{fmtWork(workMin(a))}</td>
                 <td className="muted small">{a.note}</td>
               </tr>
             ))}
-            {!shownAtts.length && <tr><td colSpan={6} className="muted">근태 기록 없음</td></tr>}
+            {!shownAtts.length && <tr><td colSpan={7} className="muted">근태 기록 없음</td></tr>}
           </tbody>
         </table>
       </div>

@@ -120,9 +120,30 @@ seed: ## 관리자 계정 시드(.env 의 ADMIN_EMAIL/ADMIN_PASSWORD, 멱등)
 	$(COMPOSE) exec members-service python -m app.seed
 
 .PHONY: backup
-backup: ## 전체 DB 백업 → data/backup_YYYYmmdd-HHMMSS.sql
-	@$(COMPOSE) exec -T postgres pg_dumpall -U labmate > data/backup_$(TS).sql \
-	  && echo "백업 저장: data/backup_$(TS).sql"
+backup: ## 전체 백업(DB + 첨부파일) → data/backups/labmate_YYYYmmdd-HHMMSS.tar.gz
+	@$(COMPOSE) exec -T postgres pg_dumpall -U labmate | docker run --rm -i -v $(PWD)/data:/data alpine sh -c \
+	  'mkdir -p /data/backups && cat > /data/db.sql && tar -czf /data/backups/labmate_$(TS).tar.gz -C /data db.sql uploads && rm -f /data/db.sql'
+	@echo "백업(DB+첨부): data/backups/labmate_$(TS).tar.gz"
+
+.PHONY: restore
+restore: ## 백업 복구(DB+첨부): make restore FILE=data/backups/labmate_<시각>.tar.gz
+	@[ -n "$(FILE)" ] || { echo "사용법: make restore FILE=data/backups/labmate_<시각>.tar.gz"; exit 1; }
+	@[ -f "$(FILE)" ] || { echo "파일 없음: $(FILE)"; exit 1; }
+	@printf "⚠ 현재 DB·첨부파일을 백업본으로 덮어씁니다(되돌릴 수 없음). 'yes' 입력: " && read ans && [ "$$ans" = "yes" ]
+	@echo "→ 앱 서비스 정지"
+	@$(COMPOSE) stop $(APP_SERVICES) >/dev/null 2>&1 || true
+	@echo "→ 기존 DB 드롭"
+	@for db in labmate_members labmate_projects labmate_funds labmate_attendance labmate_boards labmate_resource; do \
+	  $(COMPOSE) exec -T postgres psql -U labmate -d postgres -c "DROP DATABASE IF EXISTS $$db WITH (FORCE);" >/dev/null 2>&1 || \
+	  $(COMPOSE) exec -T postgres psql -U labmate -d postgres -c "DROP DATABASE IF EXISTS $$db;" >/dev/null 2>&1 || true; \
+	done
+	@echo "→ DB 적재"
+	@docker run --rm -v $(PWD)/data:/data:ro alpine sh -c 'tar -xzOf /$(FILE) db.sql' | $(COMPOSE) exec -T postgres psql -U labmate -d postgres >/dev/null 2>&1 || true
+	@echo "→ 첨부파일 복원"
+	@docker run --rm -v $(PWD)/data:/data alpine sh -c 'rm -rf /data/uploads && tar -xzf /$(FILE) -C /data uploads'
+	@echo "→ 서비스 재기동"
+	@$(COMPOSE) up -d >/dev/null
+	@echo "복구 완료: $(FILE)"
 
 .PHONY: reset
 reset: ## ⚠ 모든 데이터 삭제 후 관리자만 재시드(백업 먼저 권장)

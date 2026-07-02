@@ -23,3 +23,4 @@ frontend/dist/
 
 # 테스트용 업로드 양식(소스 아님)
 /*.xlsx
+/data/backups/

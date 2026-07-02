@@ -62,7 +62,8 @@ make help      # 전체 명령 목록
 | `make logs` | 로그 follow (`make logs S=members-service` 로 개별) |
 | `make health` | 6개 서비스 헬스체크 |
 | `make seed` | 관리자 계정 시드(멱등) |
-| `make backup` | 전체 DB 백업 → `data/backup_<시각>.sql` |
+| `make backup` | 전체 백업(DB + 첨부파일) → `data/backups/labmate_<시각>.tar.gz` |
+| `make restore FILE=…` | 백업 아카이브로 DB·첨부파일 복구 |
 | `make reset` | ⚠ 모든 데이터 삭제 후 관리자만 재시드 |
 | `make clean` | 컨테이너+네트워크 제거(데이터 유지) |
 | `make clean-all` | ⚠ 컨테이너+볼륨+빌드이미지 제거 |
@@ -116,13 +117,15 @@ data/                          # postgres 데이터 · 업로드 파일(영속)
 
 ## 데이터 백업 / 복구
 
+DB와 첨부파일(`data/uploads`)을 하나의 아카이브로 백업·복구합니다.
+
 ```bash
-make backup                                   # data/backup_<시각>.sql 생성
-# 복구(전체 DB):
-docker compose exec -T postgres psql -U labmate -d postgres < data/backup_<시각>.sql
+make backup                                            # data/backups/labmate_<시각>.tar.gz (DB + 첨부파일)
+make restore FILE=data/backups/labmate_<시각>.tar.gz   # 복구(현재 DB·첨부파일을 백업본으로 덮어씀)
 ```
 
-관리자 화면(환경설정 › 데이터 백업)에서도 서비스별 JSON 백업/복구를 지원합니다.
+- `restore`는 앱 서비스 정지 → DB 재적재 → 첨부파일 복원 → 재기동 순으로 진행합니다(되돌릴 수 없음).
+- 관리자 화면(환경설정 › 데이터 백업)의 JSON 백업/복구는 **DB 데이터만** 다룹니다(첨부파일 미포함). 첨부파일까지 포함한 완전 백업은 `make backup`을 사용하세요.
 
 ---
 

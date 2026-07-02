@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from labmate_common.db import Base, engine
-from labmate_common.migrate import rename_columns
+from labmate_common.migrate import add_columns, rename_columns
 
 from . import models  # noqa: F401
 from labmate_common.configstore import make_config_router
@@ -26,6 +26,10 @@ async def lifespan(app: FastAPI):
         ("att_correction_reqs", "state", "status"),
         ("leaves", "start", "start_date"),
         ("leaves", "end", "end_date"),
+    ])
+    add_columns(engine, [
+        ("attendance", "work_min", "INTEGER DEFAULT 0"),
+        ("attendance", "session_start", "VARCHAR(5) DEFAULT ''"),
     ])
     yield
 

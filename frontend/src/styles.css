@@ -279,7 +279,25 @@ blockquote { border-left: 3px solid var(--line); padding-left: 12px; margin: 8px
 .rte-body:empty:before { content: attr(data-ph); color: var(--sub); }
 .rte-body.rte-drop { background: var(--bsoft); box-shadow: inset 0 0 0 2px var(--brand); }
 .rte-body img { max-width: 100%; }
+.rte-body h1 { font-size: 20px; margin: 8px 0; font-weight: 800; }
+.rte-body h2 { font-size: 17px; margin: 7px 0; font-weight: 700; }
 .rte-body h3 { font-size: 15px; margin: 6px 0; }
+.rte-heading { height: 28px; padding: 0 6px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); margin: 0 2px; cursor: pointer; }
+/* 코드 */
+.rte-body code.rte-code, code.rte-code { background: var(--soft); border: 1px solid var(--line2); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+.rte-body pre, .metatbl pre { background: #1f2733; color: #e7eaef; padding: 10px 12px; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; margin: 8px 0; overflow: auto; white-space: pre-wrap; }
+/* 체크리스트 */
+.rte-check { list-style: none; padding-left: 2px; }
+.rte-check li { position: relative; padding-left: 24px; }
+.rte-check li::before { content: ""; position: absolute; left: 2px; top: 3px; width: 14px; height: 14px; border: 1.5px solid var(--sub); border-radius: 3px; cursor: pointer; box-sizing: border-box; }
+.rte-check li.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: #fff; font-size: 11px; line-height: 12px; text-align: center; }
+.rte-check li.done { color: var(--sub); text-decoration: line-through; }
+/* 표 헤더셀 */
+.rte-body th { background: var(--soft); font-weight: 700; }
+/* 링크 편집 팝오버 */
+.rte-linkpop { position: absolute; z-index: 20; display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: 12px; max-width: 320px; }
+.rte-linkpop-url { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--brand); }
+.rte-linkpop button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
 .rte-body ul { padding-left: 20px; margin: 6px 0; }
 
 /* 다크모드 토글 */

@@ -87,7 +87,7 @@ class UserCreate(ProfileFields):
     email: EmailStr
     name: str
     role: str
-    temp_password: str = Field(min_length=8, description="초기 임시 비밀번호(첫 로그인 시 변경 강제)")
+    temp_password: str = Field(default="labmate123", min_length=8, description="초기 임시 비밀번호(미지정 시 기본값, 첫 로그인 시 변경 강제)")
 
 
 class UserUpdate(BaseModel):
@@ -118,7 +118,7 @@ class UserUpdate(BaseModel):
 
 
 class ResetPasswordIn(BaseModel):
-    """관리자 비밀번호 초기화 — 새 임시 비밀번호를 지정하고 강제 변경 플래그를 켠다."""
+    """관리자 비밀번호 초기화 — 임시 비밀번호 지정 + 강제 변경."""
     temp_password: str = Field(min_length=8)
 
 

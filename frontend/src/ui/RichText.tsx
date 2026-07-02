@@ -34,6 +34,11 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
   const fileRef = useRef<HTMLInputElement>(null);
   const selImg = useRef<HTMLImageElement | null>(null);
   const savedRange = useRef<Range | null>(null);
+  const activeCell = useRef<HTMLTableCellElement | null>(null);
+  const [inTable, setInTable] = useState(false);
+  const editAnchor = useRef<HTMLAnchorElement | null>(null);
+  const [linkPop, setLinkPop] = useState<{ href: string; l: number; t: number } | null>(null);
+  const plainPaste = useRef(false);
   const [over, setOver] = useState(false);
   const [box, setBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [dlg, setDlg] = useState<null | "link" | "table">(null);
@@ -82,11 +87,20 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
   }
   function onPaste(e: React.ClipboardEvent<HTMLDivElement>) {
     const files = Array.from(e.clipboardData?.files || []);
-    if (files.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); handleFiles(files); }
+    if (files.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); handleFiles(files); return; }
+    if (plainPaste.current) {   // Ctrl+Shift+V: 서식 없이 텍스트만
+      e.preventDefault(); plainPaste.current = false;
+      document.execCommand("insertText", false, e.clipboardData?.getData("text/plain") || "");
+    }
   }
   function openLink() { saveSel(); setLink({ url: "https://", text: window.getSelection()?.toString() || "" }); setDlg("link"); }
   function confirmLink() {
-    const url = link.url.trim(); if (!url) { setDlg(null); return; }
+    const url = link.url.trim(); if (!url) { setDlg(null); editAnchor.current = null; return; }
+    if (editAnchor.current) {
+      editAnchor.current.setAttribute("href", url);
+      if (link.text) editAnchor.current.textContent = link.text;
+      editAnchor.current = null; setDlg(null); innerRef.current?.focus(); _afterEdit(); return;
+    }
     restoreSel();
     const sel = window.getSelection();
     if (sel && sel.toString()) document.execCommand("createLink", false, url);
@@ -115,6 +129,18 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
     const t = e.target as HTMLElement;
     if (t.tagName === "IMG") { selImg.current = t as HTMLImageElement; updateBox(); }
     else { selImg.current = null; setBox(null); }
+    // 체크리스트 체크박스(li 좌측 영역) 클릭 → 완료 토글
+    const li = t.closest?.("li") as HTMLLIElement | null;
+    if (li && li.parentElement?.classList.contains("rte-check") && e.clientX - li.getBoundingClientRect().left <= 22) {
+      li.classList.toggle("done"); _afterEdit();
+    }
+    // 기존 링크 클릭 → 편집 팝오버
+    const a = t.closest?.("a") as HTMLAnchorElement | null;
+    if (a && innerRef.current?.contains(a) && wrapRef.current) {
+      const wr = wrapRef.current.getBoundingClientRect(), ar = a.getBoundingClientRect();
+      editAnchor.current = a; setLinkPop({ href: a.getAttribute("href") || "", l: ar.left - wr.left, t: ar.bottom - wr.top + 4 });
+    } else { setLinkPop(null); editAnchor.current = null; }
+    syncTableCtx();
   }
   function startResize(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
@@ -126,6 +152,109 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
   }
   function setW(pct: string) { const img = selImg.current; if (!img) return; img.style.width = pct; img.style.height = "auto"; updateBox(); }
 
+  // 표 셀 컨텍스트(표 편집 툴바용)
+  function syncTableCtx() {
+    const sel = window.getSelection();
+    let node: Node | null = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+    let td: HTMLTableCellElement | null = null;
+    while (node && node !== innerRef.current) {
+      if (node.nodeType === 1 && (node as HTMLElement).matches?.("td,th")) { td = node as HTMLTableCellElement; break; }
+      node = node.parentNode;
+    }
+    activeCell.current = td && innerRef.current?.contains(td) ? td : null;
+    setInTable(!!activeCell.current);
+  }
+  const _tbl = () => activeCell.current?.closest("table") as HTMLTableElement | null;
+  const _row = () => activeCell.current?.closest("tr") as HTMLTableRowElement | null;
+  const _colIdx = () => { const r = _row(), c = activeCell.current; return r && c ? Array.from(r.cells).indexOf(c) : -1; };
+  const _newCell = () => { const el = document.createElement("td"); el.style.cssText = "border:1px solid #d0d5dd;padding:6px 9px;min-width:44px;"; el.innerHTML = "<br>"; return el; };
+  const _afterEdit = () => { innerRef.current?.dispatchEvent(new Event("input", { bubbles: true })); innerRef.current?.focus(); };
+  function addRow(below: boolean) {
+    const r = _row(); const body = r?.parentElement; if (!r || !body) return;
+    const nr = document.createElement("tr");
+    for (let i = 0; i < r.cells.length; i++) nr.appendChild(_newCell());
+    body.insertBefore(nr, below ? r.nextSibling : r); _afterEdit();
+  }
+  function delRow() {
+    const r = _row(), t = _tbl(); if (!r || !t) return;
+    if (t.rows.length <= 1) { t.remove(); activeCell.current = null; setInTable(false); } else r.remove();
+    _afterEdit();
+  }
+  function addCol(right: boolean) {
+    const t = _tbl(), ci = _colIdx(); if (!t || ci < 0) return;
+    Array.from(t.rows).forEach((row) => { const ref = row.cells[ci]; row.insertBefore(_newCell(), right ? (ref?.nextSibling || null) : ref); });
+    _afterEdit();
+  }
+  function delCol() {
+    const t = _tbl(), ci = _colIdx(); if (!t || ci < 0) return;
+    if ((t.rows[0]?.cells.length || 0) <= 1) { t.remove(); activeCell.current = null; setInTable(false); }
+    else Array.from(t.rows).forEach((row) => { if (row.cells[ci]) row.deleteCell(ci); });
+    _afterEdit();
+  }
+  function delTable() { const t = _tbl(); if (t) t.remove(); activeCell.current = null; setInTable(false); _afterEdit(); }
+  function cellAlign(a: string) { const c = activeCell.current; if (c) { c.style.textAlign = a; _afterEdit(); } }
+  function toggleHeaderRow() {   // 현재 행 td↔th 전환(헤더행 지정)
+    const r = _row(); if (!r) return;
+    const toTh = r.cells[0]?.tagName !== "TH";
+    Array.from(r.cells).forEach((c) => {
+      const nn = document.createElement(toTh ? "th" : "td");
+      nn.style.cssText = (c as HTMLElement).style.cssText || "border:1px solid #d0d5dd;padding:6px 9px;min-width:44px;";
+      if (toTh) nn.style.background = "#f5f7fa"; else nn.style.removeProperty("background");
+      nn.innerHTML = c.innerHTML;
+      c.replaceWith(nn);
+    });
+    activeCell.current = null; setInTable(false); _afterEdit();
+  }
+
+  // 선택 위치에서 특정 태그 조상 찾기(에디터 내부)
+  function closestTag(tag: string): HTMLElement | null {
+    const sel = window.getSelection(); let n: Node | null = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+    const T = tag.toUpperCase();
+    while (n && n !== innerRef.current) { if (n.nodeType === 1 && (n as HTMLElement).tagName === T) return n as HTMLElement; n = n.parentNode; }
+    return null;
+  }
+  function checklist() {   // 체크리스트 — UL에 rte-check 클래스 토글
+    const ul = closestTag("UL");
+    if (ul) { ul.classList.toggle("rte-check"); _afterEdit(); return; }
+    exec("insertUnorderedList");
+    closestTag("UL")?.classList.add("rte-check");
+    _afterEdit();
+  }
+  function inlineCode() {
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+    const txt = sel.toString().replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    document.execCommand("insertHTML", false, `<code class="rte-code">${txt}</code>`);
+    innerRef.current?.focus(); _afterEdit();
+  }
+  async function pastePlain() {
+    ensureCaret();
+    try { const txt = await navigator.clipboard.readText(); document.execCommand("insertText", false, txt); } catch { /* 권한 없으면 Ctrl+Shift+V 사용 */ }
+    _afterEdit();
+  }
+  function editLinkFromPop() {   // 링크 팝오버 → 편집 다이얼로그(기존 앵커 유지)
+    const a = editAnchor.current; if (!a) return;
+    saveSel(); setLink({ url: a.getAttribute("href") || "https://", text: a.textContent || "" }); setLinkPop(null); setDlg("link");
+  }
+  function removeLink() {
+    const a = editAnchor.current; if (a) { a.replaceWith(document.createTextNode(a.textContent || "")); }
+    editAnchor.current = null; setLinkPop(null); _afterEdit();
+  }
+
+  // 에디터 단축키(Tab 들여쓰기/내어쓰기, Ctrl+K 링크, Ctrl+E 인라인 코드; 굵게·기울임·밑줄은 브라우저 기본)
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      document.execCommand(e.shiftKey ? "outdent" : "indent", false);
+      return;
+    }
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "k") { e.preventDefault(); openLink(); return; }
+    if (mod && e.shiftKey && (e.key === "8" || e.key === "*")) { e.preventDefault(); exec("insertUnorderedList"); return; }
+    if (mod && e.shiftKey && (e.key === "7" || e.key === "&")) { e.preventDefault(); exec("insertOrderedList"); return; }
+    if (mod && e.shiftKey && e.key.toLowerCase() === "v") { plainPaste.current = true; setTimeout(() => { plainPaste.current = false; }, 150); }
+    if (mod && e.key.toLowerCase() === "e") { e.preventDefault(); inlineCode(); return; }
+  }
+
   const Tb = ({ t, on, children, style }: any) => <button type="button" className="rte-tip" data-tip={t} aria-label={t} onMouseDown={(e: any) => e.preventDefault()} onClick={on} style={style}>{children}</button>;
 
   return (
@@ -134,6 +263,13 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
         <Tb t="실행취소" on={() => exec("undo")}>{ICONS.undo}</Tb>
         <Tb t="다시실행" on={() => exec("redo")}>{ICONS.redo}</Tb>
         <span className="sep" />
+        <span className="rte-tip" data-tip="단락 스타일">
+          <select className="rte-heading" defaultValue="" onMouseDown={saveSel}
+            onChange={(e) => { const v = e.target.value; if (!v) return; restoreSel(); exec("formatBlock", v); e.currentTarget.value = ""; }}>
+            <option value="" disabled hidden>단락</option>
+            <option value="P">본문</option><option value="H1">제목 1</option><option value="H2">제목 2</option><option value="H3">제목 3</option>
+          </select>
+        </span>
         <span className="rte-tip" data-tip="글씨 크기(pt) — 입력 후 Enter"><input className="rte-pt" type="number" min={6} max={120} defaultValue={11}
           onMouseDown={saveSel}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setFontPt((e.target as HTMLInputElement).value); } }} /></span>
@@ -143,6 +279,7 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
         <Tb t="기울임" on={() => exec("italic")} style={{ fontStyle: "italic", fontFamily: "serif" }}>I</Tb>
         <Tb t="밑줄" on={() => exec("underline")} style={{ textDecoration: "underline" }}>U</Tb>
         <Tb t="취소선" on={() => exec("strikeThrough")} style={{ textDecoration: "line-through" }}>S</Tb>
+        <Tb t="인라인 코드 (Ctrl+E)" on={inlineCode} style={{ fontFamily: "monospace" }}>{"</>"}</Tb>
         <label className="rte-color rte-tip" data-tip="글씨 색"><span>A</span><input type="color" defaultValue="#1f2733" onMouseDown={saveSel} onChange={(e) => execCss("foreColor", e.target.value)} /></label>
         <label className="rte-color rte-tip" data-tip="형광펜"><span style={{ background: "#ffe69a", borderRadius: 2, padding: "0 2px" }}>A</span><input type="color" defaultValue="#ffe69a" onMouseDown={saveSel} onChange={(e) => execCss("hiliteColor", e.target.value)} /></label>
         <span className="sep" />
@@ -152,17 +289,19 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
         <span className="sep" />
         <Tb t="글머리 목록" on={() => exec("insertUnorderedList")}>{ICONS.ul}</Tb>
         <Tb t="번호 목록" on={() => exec("insertOrderedList")}>{ICONS.ol}</Tb>
+        <Tb t="체크리스트" on={checklist} style={{ fontSize: 15 }}>☑</Tb>
         <Tb t="내어쓰기" on={() => exec("outdent")}>{ICONS.outdent}</Tb>
         <Tb t="들여쓰기" on={() => exec("indent")}>{ICONS.indent}</Tb>
         <span className="sep" />
-        <Tb t="제목" on={() => exec("formatBlock", "H3")} style={{ fontWeight: 800 }}>H</Tb>
         <Tb t="인용" on={() => exec("formatBlock", "BLOCKQUOTE")}>{ICONS.quote}</Tb>
+        <Tb t="코드 블록" on={() => exec("formatBlock", "PRE")} style={{ fontFamily: "monospace", fontWeight: 700 }}>{"{ }"}</Tb>
+        <Tb t="구분선" on={() => exec("insertHorizontalRule")}>{ICONS.hr}</Tb>
         <span className="sep" />
         <Tb t="링크" on={openLink}>{ICONS.link}</Tb>
         <Tb t="이미지" on={() => fileRef.current?.click()}>{ICONS.image}</Tb>
         <Tb t="표" on={openTable}>{ICONS.table}</Tb>
-        <Tb t="구분선" on={() => exec("insertHorizontalRule")}>{ICONS.hr}</Tb>
         <span className="sep" />
+        <Tb t="텍스트만 붙여넣기 (Ctrl+Shift+V)" on={pastePlain} style={{ fontSize: 12, fontWeight: 700 }}>Tⁿ</Tb>
         <Tb t="서식 지우기" on={() => exec("removeFormat")}>{ICONS.clear}</Tb>
         {box && (
           <span className="rte-imgtools">
@@ -173,13 +312,30 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
             <button type="button" onClick={() => setW("100%")}>100%</button>
           </span>
         )}
+        {inTable && !box && (
+          <span className="rte-imgtools">
+            <span className="muted">표</span>
+            <button type="button" title="위에 행 추가" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(false)}>＋행↑</button>
+            <button type="button" title="아래에 행 추가" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(true)}>＋행↓</button>
+            <button type="button" title="행 삭제" onMouseDown={(e) => e.preventDefault()} onClick={delRow}>－행</button>
+            <button type="button" title="왼쪽에 열 추가" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(false)}>＋열←</button>
+            <button type="button" title="오른쪽에 열 추가" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(true)}>＋열→</button>
+            <button type="button" title="열 삭제" onMouseDown={(e) => e.preventDefault()} onClick={delCol}>－열</button>
+            <button type="button" title="셀 왼쪽 정렬" onMouseDown={(e) => e.preventDefault()} onClick={() => cellAlign("left")}>⇤</button>
+            <button type="button" title="셀 가운데 정렬" onMouseDown={(e) => e.preventDefault()} onClick={() => cellAlign("center")}>⇔</button>
+            <button type="button" title="셀 오른쪽 정렬" onMouseDown={(e) => e.preventDefault()} onClick={() => cellAlign("right")}>⇥</button>
+            <button type="button" title="헤더행 지정/해제" onMouseDown={(e) => e.preventDefault()} onClick={toggleHeaderRow}>헤더</button>
+            <button type="button" title="표 삭제" onMouseDown={(e) => e.preventDefault()} onClick={delTable} style={{ color: "var(--bad)" }}>표✕</button>
+          </span>
+        )}
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { handleFiles(Array.from(e.target.files || [])); e.target.value = ""; }} />
       <div className={"rte-body" + (over ? " rte-drop" : "")} data-testid={testid} ref={innerRef} contentEditable suppressContentEditableWarning
         data-ph={placeholder} style={{ minHeight: minHeight * 2 }}
         onClick={onBodyClick}
-        onKeyUp={saveSel}
-        onMouseUp={saveSel}
+        onKeyDown={onKeyDown}
+        onKeyUp={() => { saveSel(); syncTableCtx(); }}
+        onMouseUp={() => { saveSel(); syncTableCtx(); }}
         onScroll={updateBox}
         onDrop={onDrop}
         onDragOver={(e) => { if (Array.from(e.dataTransfer?.items || []).some((it) => it.kind === "file")) { e.preventDefault(); setOver(true); } }}
@@ -189,11 +345,18 @@ export function RichText({ innerRef, placeholder, testid, minHeight = 160 }: {
         <div className="rte-imgsel" style={{ left: box.l, top: box.t, width: box.w, height: box.h }} />
         <div className="rte-imghandle" style={{ left: box.l + box.w - 7, top: box.t + box.h - 7 }} onMouseDown={startResize} title="드래그해 크기 조절" />
       </>}
+      {linkPop && (
+        <div className="rte-linkpop" style={{ left: linkPop.l, top: linkPop.t }} onMouseDown={(e) => e.preventDefault()}>
+          <a className="rte-linkpop-url" href={linkPop.href} target="_blank" rel="noreferrer" title={linkPop.href}>{linkPop.href || "(링크)"}</a>
+          <button type="button" onClick={editLinkFromPop}>편집</button>
+          <button type="button" onClick={removeLink} style={{ color: "var(--bad)" }}>해제</button>
+        </div>
+      )}
 
       {dlg === "link" && (
         <div className="modal-ovl" onClick={(e) => { if (e.target === e.currentTarget) setDlg(null); }}>
           <div className="modal" style={{ width: 420 }} data-testid="rte-link-dialog">
-            <div className="modal-h"><b>링크 삽입</b><button type="button" className="btn ghost sm" onClick={() => setDlg(null)}>✕</button></div>
+            <div className="modal-h"><b>{editAnchor.current ? "링크 편집" : "링크 삽입"}</b><button type="button" className="btn ghost sm" onClick={() => { setDlg(null); editAnchor.current = null; }}>✕</button></div>
             <div className="modal-b">
               <label>URL</label>
               <input autoFocus value={link.url} placeholder="https://example.com" onChange={(e) => setLink({ ...link, url: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") confirmLink(); }} />

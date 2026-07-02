@@ -12,6 +12,8 @@ class AttendanceOut(BaseModel):
     check_out: str
     status: str
     note: str
+    work_min: int = 0            # 실제 근무 분(세션별 누적)
+    session_start: str = ""      # 현재 근무 세션 시작 HH:MM(근무 중이면 라이브 계산용)
     corrected: bool
     model_config = {"from_attributes": True}
 

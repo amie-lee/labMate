@@ -138,7 +138,7 @@ def update_expense(eid: str, body: schemas.ExpenseIn, user: CurrentUser = Depend
     for k, v in body.model_dump(exclude_unset=True).items():       # 보낸 필드만 갱신
         setattr(e, k, v)
     e.status = "집행"
-    _apply_budget_spend(db, e.project_id, e.category, e.amount)         # 변경분 재반영
+    _apply_budget_spend(db, e.project_id, e.category, e.amount)         # 변경분 반영
     db.commit(); db.refresh(e)
     return e
 
@@ -264,6 +264,11 @@ def list_parts_year(year: str, project_id: str = "", _: CurrentUser = Depends(ge
     return list(db.scalars(q))
 
 
+@router.get("/participations/all", response_model=list[schemas.ParticipationIn])
+def list_parts_all(_: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    return list(db.scalars(select(Participation)))
+
+
 @router.post("/participations/set")
 def set_participation(body: schemas.ParticipationSetIn, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """단건 참여율 upsert — 참여율·예정 인건비 갱신, 지급확정 명세 보호."""
@@ -322,7 +327,7 @@ def payroll_rates(_: CurrentUser = Depends(get_current_user), db: Session = Depe
 
 @router.post("/payroll/confirm")
 def confirm_month(month: str, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """해당 월 인건비 확정 — 최신 예정 명세로 재계산, 예산은 과제별 delta만 반영."""
+    """월 인건비 확정 — 최신 예정 명세 채택, 예산은 과제별 delta 반영."""
     if not _fin_admin(user):
         raise HTTPException(403, "권한 없음")
     slips = list(db.scalars(select(Payslip).where(Payslip.month == month)))
